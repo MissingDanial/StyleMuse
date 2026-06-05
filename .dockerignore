@@ -1,0 +1,8 @@
+.venv
+.git
+.cache
+*.epub
+__pycache__
+*.pyc
+.env
+logs/

@@ -1,0 +1,12 @@
+services:
+  stylemuse:
+    build: .
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./.env:/app/.env:ro
+      - ./authors:/app/authors
+      - ./logs:/app/logs
+    env_file:
+      - .env
+    restart: unless-stopped

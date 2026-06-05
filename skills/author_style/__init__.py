@@ -9,6 +9,7 @@ from .author_manager import create_author, list_authors, delete_author, get_auth
 from .analyzer import analyze_author
 from .loader import load_all_chunks
 from .style_prompt import build_system_prompt, build_user_prompt
+from .plagiarism import check_plagiarism
 
 __all__ = [
     # 核心 Skill
@@ -20,6 +21,8 @@ __all__ = [
     "get_author_info",
     # 分析器
     "analyze_author",
+    # 抄袭检测
+    "check_plagiarism",
     # 工具函数
     "extract_text_from_response",
     "load_all_chunks",
@@ -27,4 +30,4 @@ __all__ = [
     "build_user_prompt",
 ]
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"

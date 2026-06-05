@@ -11,6 +11,9 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
 
 from .epub_loader import load_epub_books
+from .logger import get_logger
+
+log = get_logger(__name__)
 
 
 def load_txt_files(works_dir: Path) -> List[Document]:
@@ -44,7 +47,7 @@ def load_txt_files(works_dir: Path) -> List[Document]:
             )
             documents.append(doc)
         except Exception as e:
-            print(f"  读取 {txt_file.name} 失败: {e}")
+            log.error(f"  读取 {txt_file.name} 失败: {e}")
 
     return documents
 
@@ -103,7 +106,7 @@ def load_all_chunks(author_dir: Path, chunk_size: int = 100, chunk_overlap: int 
     if cache_file.exists() and not force_recreate:
         with open(cache_file, "r", encoding="utf-8") as f:
             data = json.load(f)
-            print(f"从缓存加载 {len(data)} 个文本块")
+            log.info(f"从缓存加载 {len(data)} 个文本块")
             return [Document(page_content=item["content"], metadata=item["metadata"]) for item in data]
 
     all_docs = []
@@ -112,7 +115,7 @@ def load_all_chunks(author_dir: Path, chunk_size: int = 100, chunk_overlap: int 
     works_dir = author_dir / "works"
     if works_dir.exists():
         txt_docs = load_txt_files(works_dir)
-        print(f"  txt 文件: {len(txt_docs)} 个文档")
+        log.info(f"  txt 文件: {len(txt_docs)} 个文档")
         all_docs.extend(txt_docs)
 
     # 加载 epub 文件
@@ -120,16 +123,16 @@ def load_all_chunks(author_dir: Path, chunk_size: int = 100, chunk_overlap: int 
     if epub_dir.exists():
         epub_cache = author_dir / "cache" / "epub_raw.json"
         epub_docs = load_epub_books(epub_dir, cache_file=epub_cache, force_recreate=force_recreate)
-        print(f"  epub 文件: {len(epub_docs)} 个文档")
+        log.info(f"  epub 文件: {len(epub_docs)} 个文档")
         all_docs.extend(epub_docs)
 
     if not all_docs:
-        print(f"警告: 未找到任何文本文件 ({author_dir})")
+        log.warning(f"警告: 未找到任何文本文件 ({author_dir})")
         return []
 
     # 切分
     split_docs = split_documents(all_docs, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
-    print(f"  切分完成: {len(split_docs)} 个文本块")
+    log.info(f"  切分完成: {len(split_docs)} 个文本块")
 
     # 保存缓存
     cache_file.parent.mkdir(parents=True, exist_ok=True)

@@ -68,6 +68,23 @@ python app.py
 python main.py write --author liu_liangcheng --topic "故乡的狗"
 ```
 
+### 5. Docker 部署（可选）
+
+使用 Docker Compose 一键启动：
+
+```bash
+# 构建并启动
+docker-compose up -d --build
+
+# 查看日志
+docker-compose logs -f
+
+# 停止服务
+docker-compose down
+```
+
+> **注意：** 确保 `.env` 文件已配置好 API 密钥，`authors/` 目录用于持久化作家数据。
+
 ## 📖 使用方式
 
 ### Web 界面

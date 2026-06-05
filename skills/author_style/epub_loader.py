@@ -10,6 +10,9 @@ from typing import List
 from bs4 import BeautifulSoup
 
 from langchain_core.documents import Document
+from .logger import get_logger
+
+log = get_logger(__name__)
 
 warnings.filterwarnings("ignore")
 
@@ -109,23 +112,23 @@ def load_epub_books(epub_dir: Path, cache_file: Path = None, force_recreate: boo
 
     epub_files = list(epub_dir.glob("*.epub"))
     if not epub_files:
-        print(f"提示: 在 {epub_dir} 中未找到 epub 文件")
+        log.warning(f"提示: 在 {epub_dir} 中未找到 epub 文件")
         return []
 
     all_docs = []
     for epub_path in epub_files:
         try:
             docs = parse_epub(epub_path)
-            print(f"  解析 {epub_path.name}: {len(docs)} 个片段")
+            log.info(f"  解析 {epub_path.name}: {len(docs)} 个片段")
             all_docs.extend(docs)
         except Exception as e:
-            print(f"  解析 {epub_path.name} 失败: {e}，尝试备用方法...")
+            log.error(f"  解析 {epub_path.name} 失败: {e}，尝试备用方法...")
             try:
                 docs = parse_epub_from_zip(epub_path)
-                print(f"  备用方法解析 {epub_path.name}: {len(docs)} 个片段")
+                log.info(f"  备用方法解析 {epub_path.name}: {len(docs)} 个片段")
                 all_docs.extend(docs)
             except Exception as e2:
-                print(f"  备用方法也失败: {e2}")
+                log.error(f"  备用方法也失败: {e2}")
 
     # 保存缓存
     if cache_file:
@@ -133,6 +136,6 @@ def load_epub_books(epub_dir: Path, cache_file: Path = None, force_recreate: boo
         data = [{"content": doc.page_content, "metadata": doc.metadata} for doc in all_docs]
         with open(cache_file, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
-        print(f"  epub 缓存已保存: {cache_file}")
+        log.info(f"  epub 缓存已保存: {cache_file}")
 
     return all_docs

@@ -18,7 +18,7 @@ from pathlib import Path
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
-from flask import Flask, request, jsonify, send_from_directory, send_file
+from flask import Flask, request, jsonify, send_from_directory, send_file, Response
 from skills.author_style import (
     AuthorStyleSkill,
     create_author,
@@ -180,6 +180,83 @@ def api_write():
         return jsonify({"ok": False, "error": str(e)}), 404
     except ValueError as e:
         return jsonify({"ok": False, "error": str(e)}), 400
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/write-stream", methods=["POST"])
+def api_write_stream():
+    """SSE 流式写作接口"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"ok": False, "error": "缺少请求数据"}), 400
+
+        author = data.get("author", "").strip()
+        topic = data.get("topic", "").strip()
+        if not author:
+            return jsonify({"ok": False, "error": "请选择作家"}), 400
+        if not topic:
+            return jsonify({"ok": False, "error": "请输入写作主题"}), 400
+
+        kwargs = {}
+        if data.get("model"):
+            kwargs["model"] = data["model"]
+        if data.get("temperature") is not None:
+            kwargs["temperature"] = float(data["temperature"])
+        if data.get("max_tokens"):
+            kwargs["max_tokens"] = int(data["max_tokens"])
+
+        skill = AuthorStyleSkill(author, **kwargs)
+
+        tone = data.get("tone", "default")
+        length = data.get("length", "medium")
+        include_retrieval = data.get("include_retrieval", True)
+        save_dir = data.get("save_dir", "").strip()
+
+        def generate():
+            article_chunks = []
+            try:
+                for chunk in skill.write_stream(
+                    topic=topic,
+                    tone=tone,
+                    length=length,
+                    include_retrieval=include_retrieval,
+                ):
+                    article_chunks.append(chunk)
+                    yield f"data: {json.dumps({'type': 'chunk', 'content': chunk}, ensure_ascii=False)}\n\n"
+
+                # 保存文章
+                article = "".join(article_chunks)
+                saved_path = ""
+                if save_dir:
+                    save_path = Path(save_dir)
+                    save_path.mkdir(parents=True, exist_ok=True)
+                    filename = save_path / f"{topic}.txt"
+                    filename.write_text(article, encoding="utf-8")
+                    saved_path = str(filename)
+                else:
+                    output_dir = project_root / "authors" / author / "output"
+                    output_dir.mkdir(parents=True, exist_ok=True)
+                    filename = output_dir / f"{topic}.txt"
+                    filename.write_text(article, encoding="utf-8")
+                    saved_path = str(filename)
+
+                yield f"data: {json.dumps({'type': 'done', 'article': article, 'topic': topic, 'author': author, 'saved_path': saved_path}, ensure_ascii=False)}\n\n"
+            except Exception as e:
+                traceback.print_exc()
+                yield f"data: {json.dumps({'type': 'error', 'error': str(e)}, ensure_ascii=False)}\n\n"
+
+        return Response(
+            generate(),
+            mimetype="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
     except Exception as e:
         traceback.print_exc()
         return jsonify({"ok": False, "error": str(e)}), 500

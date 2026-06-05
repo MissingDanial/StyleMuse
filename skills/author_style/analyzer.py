@@ -10,6 +10,9 @@ from pathlib import Path
 from typing import List, Dict, Any
 
 from langchain_core.documents import Document
+from .logger import get_logger
+
+log = get_logger(__name__)
 
 
 def extract_basic_stats(texts: List[str]) -> Dict[str, Any]:
@@ -193,19 +196,19 @@ def analyze_author(
     # 采样
     samples = collect_sample_texts(documents)
     if not samples:
-        print("警告: 无足够文本进行风格分析")
+        log.warning("警告: 无足够文本进行风格分析")
         return {"style_guide": "", "few_shot": "", "stats": {}}
 
     # 基础统计
     stats = extract_basic_stats(samples)
-    print(f"  基础统计: {stats['sentence_count']} 句, 平均句长 {stats['avg_sentence_len']} 字")
+    log.info(f"  基础统计: {stats['sentence_count']} 句, 平均句长 {stats['avg_sentence_len']} 字")
 
     style_guide = ""
     few_shot = ""
 
     # LLM 深度分析
     if llm:
-        print("  正在进行 LLM 风格分析...")
+        log.info("  正在进行 LLM 风格分析...")
         prompt = build_analysis_prompt(author_name, samples, stats)
 
         from langchain_core.messages import HumanMessage
@@ -224,7 +227,7 @@ def analyze_author(
             content = "\n".join(text_parts)
 
         style_guide, few_shot = parse_analysis_result(content)
-        print(f"  风格分析完成: style_guide {len(style_guide)} 字, few_shot {len(few_shot)} 字")
+        log.info(f"  风格分析完成: style_guide {len(style_guide)} 字, few_shot {len(few_shot)} 字")
     else:
         # 无 LLM 时，生成基础风格描述
         style_guide = f"""## {author_name} 风格概述
@@ -250,11 +253,11 @@ def analyze_author(
         if style_guide:
             with open(output_dir / "style_guide.md", "w", encoding="utf-8") as f:
                 f.write(style_guide)
-            print(f"  已保存: {output_dir / 'style_guide.md'}")
+            log.info(f"  已保存: {output_dir / 'style_guide.md'}")
 
         if few_shot:
             with open(output_dir / "few_shot.md", "w", encoding="utf-8") as f:
                 f.write(few_shot)
-            print(f"  已保存: {output_dir / 'few_shot.md'}")
+            log.info(f"  已保存: {output_dir / 'few_shot.md'}")
 
     return {"style_guide": style_guide, "few_shot": few_shot, "stats": stats}

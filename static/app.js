@@ -160,30 +160,102 @@ async function handleWrite() {
     const btn = $("btn-write");
     btn.disabled = true; btn.textContent = "生成中...";
 
-    try {
-        const data = await api("/api/write", {
-            method: "POST",
-            body: JSON.stringify({
-                author, topic,
-                tone: $("write-tone").value,
-                length: $("write-length").value,
-                include_retrieval: $("write-retrieval").checked,
-                save_dir: $("write-save-dir").value.trim(),
-            }),
-        });
+    const payload = {
+        author, topic,
+        tone: $("write-tone").value,
+        length: $("write-length").value,
+        include_retrieval: $("write-retrieval").checked,
+        save_dir: $("write-save-dir").value.trim(),
+    };
 
-        lastArticle = data.article;
-        lastTopic = data.topic;
-        $("write-output").textContent = data.article;
-        $("write-saved-path").textContent = data.saved_path ? `已保存: ${data.saved_path}` : "";
-        showToast("生成完成", "success");
+    // Try streaming first, fall back to non-streaming on failure
+    let streamingSucceeded = false;
+    try {
+        streamingSucceeded = await handleWriteStream(payload);
     } catch (e) {
-        $("write-output").textContent = "生成失败: " + e.message;
-        showToast("生成失败", "error");
-    } finally {
-        $("write-loading").classList.add("hidden");
-        btn.disabled = false; btn.textContent = "开始写作";
+        console.warn("Streaming failed, falling back to non-streaming:", e);
     }
+
+    if (!streamingSucceeded) {
+        try {
+            const data = await api("/api/write", { method: "POST", body: JSON.stringify(payload) });
+            lastArticle = data.article;
+            lastTopic = data.topic;
+            $("write-output").textContent = data.article;
+            $("write-saved-path").textContent = data.saved_path ? `已保存: ${data.saved_path}` : "";
+            showToast("生成完成", "success");
+        } catch (e) {
+            $("write-output").textContent = "生成失败: " + e.message;
+            showToast("生成失败", "error");
+        }
+    }
+
+    $("write-loading").classList.add("hidden");
+    btn.disabled = false; btn.textContent = "开始写作";
+}
+
+async function handleWriteStream(payload) {
+    const resp = await fetch(API + "/api/write-stream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+    });
+
+    if (!resp.ok) {
+        throw new Error("Stream endpoint returned " + resp.status);
+    }
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let article = "";
+    let succeeded = false;
+
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop(); // keep incomplete line in buffer
+
+        for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            const jsonStr = line.slice(6).trim();
+            if (!jsonStr) continue;
+
+            try {
+                const event = JSON.parse(jsonStr);
+                if (event.type === "chunk") {
+                    article += event.content;
+                    $("write-output").textContent = article;
+                    // Auto-scroll to bottom
+                    $("write-output").scrollTop = $("write-output").scrollHeight;
+                } else if (event.type === "done") {
+                    lastArticle = event.article;
+                    lastTopic = event.topic;
+                    $("write-output").textContent = event.article;
+                    $("write-saved-path").textContent = event.saved_path ? `已保存: ${event.saved_path}` : "";
+                    showToast("生成完成", "success");
+                    succeeded = true;
+                } else if (event.type === "error") {
+                    throw new Error(event.error);
+                }
+            } catch (parseErr) {
+                console.warn("SSE parse error:", parseErr);
+            }
+        }
+    }
+
+    if (!succeeded && article) {
+        // Stream ended without a "done" event but we got content
+        lastArticle = article;
+        lastTopic = payload.topic;
+        showToast("生成完成", "success");
+        succeeded = true;
+    }
+
+    return succeeded;
 }
 
 function copyArticle() {

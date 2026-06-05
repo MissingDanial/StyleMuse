@@ -7,7 +7,7 @@
 
 import random
 from pathlib import Path
-from typing import List, Dict
+from typing import List, Dict, Iterator
 
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
@@ -20,6 +20,9 @@ from .config import (
 )
 from .loader import load_all_chunks
 from .style_prompt import build_system_prompt, build_user_prompt
+from .logger import get_logger
+
+log = get_logger(__name__)
 
 
 def extract_text_from_response(content) -> str:
@@ -133,7 +136,7 @@ def retrieve_relevant_context(
 
         return "\n\n".join(contexts)
     except Exception as e:
-        print(f"检索过程出现错误: {e}")
+        log.error(f"检索过程出现错误: {e}")
         return ""
 
 
@@ -213,7 +216,7 @@ class AuthorStyleSkill:
 
             self._vector_store = load_vector_store(embeddings, cache_dir)
             if self._vector_store is None:
-                print(f"向量库不存在，正在为 '{self.author_name}' 创建...")
+                log.info(f"向量库不存在，正在为 '{self.author_name}' 创建...")
                 documents = load_all_chunks(
                     self.author_dir,
                     chunk_size=self.config["chunk_size"],
@@ -221,9 +224,9 @@ class AuthorStyleSkill:
                 )
                 if documents:
                     self._vector_store = create_vector_store(documents, embeddings, cache_dir)
-                    print(f"向量库创建完成: {len(documents)} 个文本块")
+                    log.info(f"向量库创建完成: {len(documents)} 个文本块")
                 else:
-                    print("警告: 无文档可索引")
+                    log.warning("警告: 无文档可索引")
 
         return self._vector_store
 
@@ -266,7 +269,7 @@ class AuthorStyleSkill:
                         retrieval_multiplier=self.config["retrieval_multiplier"],
                     )
             except Exception as e:
-                print(f"检索失败: {e}")
+                log.error(f"检索失败: {e}")
 
         # 构建 Prompt
         system_prompt = build_system_prompt(
@@ -293,6 +296,75 @@ class AuthorStyleSkill:
 
         response = self.llm.invoke(messages)
         return extract_text_from_response(response.content)
+
+    def write_stream(
+        self,
+        topic: str,
+        tone: str = "default",
+        length: str = "medium",
+        include_retrieval: bool = True,
+    ) -> Iterator[str]:
+        """
+        模仿作家风格写作（流式输出）。
+
+        Args:
+            topic: 写作主题
+            tone: 风格选项
+            length: 长度选项
+            include_retrieval: 是否使用 RAG 检索
+
+        Yields:
+            生成的文章内容片段
+        """
+        tone_options = self.config.get("tone_options", {})
+        length_options = self.config.get("length_options", {})
+
+        tone_value = tone_options.get(tone, tone_options.get("default", tone))
+        length_value = length_options.get(length, length_options.get("medium", length))
+
+        # 检索相关上下文
+        retrieved_context = ""
+        if include_retrieval:
+            try:
+                vector_store = self._get_vector_store()
+                if vector_store:
+                    retrieved_context = retrieve_relevant_context(
+                        topic,
+                        vector_store,
+                        top_k=self.config["retrieval_top_k"],
+                        similarity_threshold=self.config["similarity_threshold"],
+                        retrieval_multiplier=self.config["retrieval_multiplier"],
+                    )
+            except Exception as e:
+                log.error(f"检索失败: {e}")
+
+        # 构建 Prompt
+        system_prompt = build_system_prompt(
+            topic=topic,
+            style_guide=self.style_guide,
+            retrieved_context=retrieved_context,
+            tone=tone_value,
+            length=length_value,
+        )
+
+        user_prompt = build_user_prompt(
+            topic=topic,
+            tone=tone_value,
+            length=length_value,
+        )
+
+        # 流式生成
+        from langchain_core.messages import HumanMessage, SystemMessage
+
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=user_prompt),
+        ]
+
+        for chunk in self.llm.stream(messages):
+            text = extract_text_from_response(chunk.content)
+            if text:
+                yield text
 
     def write_batch(self, topics: List[str], **kwargs) -> Dict[str, str]:
         """

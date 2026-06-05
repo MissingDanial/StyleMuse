@@ -23,6 +23,9 @@ authors/*/epub/*.epub
 # 向量索引和缓存（可重建）
 authors/*/cache/
 
+# 日志
+logs/
+
 # 生成的文章（可选忽略）
 # authors/*/output/
 
