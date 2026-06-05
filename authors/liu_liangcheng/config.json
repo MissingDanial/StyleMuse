@@ -1,0 +1,25 @@
+{
+  "name": "刘亮程",
+  "llm_provider": "anthropic",
+  "llm_model": "MiniMax-M2.7",
+  "llm_base_url": "https://api.minimaxi.com/anthropic",
+  "max_tokens": 2500,
+  "temperature": 1.0,
+  "chunk_size": 100,
+  "chunk_overlap": 20,
+  "retrieval_top_k": 3,
+  "similarity_threshold": 0.15,
+  "retrieval_multiplier": 3,
+  "tone_options": {
+    "default": "幽默中透着生活哲学，从日常事物引申出生命哲理",
+    "humorous": "更强调幽默感，轻松诙谐",
+    "philosophical": "更偏重生命哲学的深度思考",
+    "poetic": "更诗意化，语言更优美",
+    "simple": "更朴实自然，口语化一些"
+  },
+  "length_options": {
+    "short": "400-500字",
+    "medium": "800-1000字",
+    "long": "1500-2000字"
+  }
+}

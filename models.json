@@ -1,0 +1,8 @@
+[
+  {
+    "provider": "openai",
+    "name": "deepseek-chat",
+    "base_url": "https://api.deepseek.com/v1",
+    "label": "DeepSeek"
+  }
+]

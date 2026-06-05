@@ -1,0 +1,26 @@
+# 核心依赖
+langchain-core>=0.3.0
+langchain-community>=0.3.0
+langchain-text-splitters>=0.3.0
+
+# LLM 提供商（按需安装）
+langchain-openai>=0.3.0        # OpenAI 兼容接口（DeepSeek、通义千问、智谱等）
+langchain-anthropic>=0.3.0     # Anthropic 兼容接口（MiniMax 等）
+
+# Embedding 模型
+dashscope>=1.20.0              # 千问 Embedding
+
+# 向量数据库
+faiss-cpu>=1.8.0
+
+# EPUB 解析
+ebooklib>=0.18
+beautifulsoup4>=4.12.0
+lxml>=5.0.0
+
+# Web 前端
+flask>=3.0.0
+
+# 工具库
+python-dotenv>=1.0.0
+numpy>=1.24.0

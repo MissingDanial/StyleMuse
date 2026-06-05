@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>作家风格仿写 Skill</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="app">
+        <!-- 侧边栏 -->
+        <nav class="sidebar">
+            <div class="logo">
+                <h1>作家风格仿写</h1>
+                <p class="subtitle">RAG + LLM</p>
+            </div>
+            <ul class="nav-list">
+                <li class="nav-item active" data-tab="write">
+                    <span class="icon">✍️</span> 写作工坊
+                </li>
+                <li class="nav-item" data-tab="authors">
+                    <span class="icon">📚</span> 作家管理
+                </li>
+                <li class="nav-item" data-tab="settings">
+                    <span class="icon">⚙️</span> 模型配置
+                </li>
+            </ul>
+        </nav>
+
+        <!-- 主内容区 -->
+        <main class="content">
+            <!-- ==================== 写作工坊 ==================== -->
+            <div class="tab-panel active" id="tab-write">
+                <h2>写作工坊</h2>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label>选择作家</label>
+                        <select id="write-author">
+                            <option value="">-- 请选择 --</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>写作主题</label>
+                        <input type="text" id="write-topic" placeholder="例如：故乡的狗、春天的风">
+                    </div>
+                    <div class="form-group">
+                        <label>风格</label>
+                        <select id="write-tone">
+                            <option value="default">默认风格</option>
+                            <option value="humorous">幽默</option>
+                            <option value="philosophical">哲思</option>
+                            <option value="poetic">诗意</option>
+                            <option value="simple">朴实</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>长度</label>
+                        <select id="write-length">
+                            <option value="short">短篇 (400-500字)</option>
+                            <option value="medium" selected>中篇 (800-1000字)</option>
+                            <option value="long">长篇 (1500-2000字)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>保存位置（留空则保存到作家 output 目录）</label>
+                    <div class="input-with-btn">
+                        <input type="text" id="write-save-dir" placeholder="点击右侧按钮选择文件夹">
+                        <button class="btn btn-small" onclick="handleBrowseFolder()">浏览...</button>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="write-retrieval" checked>
+                        启用 RAG 检索（从作家作品中检索参考片段）
+                    </label>
+                </div>
+                <div class="btn-row">
+                    <button class="btn btn-primary" id="btn-write" onclick="handleWrite()">开始写作</button>
+                </div>
+
+                <!-- 结果区 -->
+                <div id="write-result" class="result-area hidden">
+                    <div class="result-header">
+                        <h3>生成结果</h3>
+                        <div class="result-actions">
+                            <span id="write-saved-path" class="saved-path"></span>
+                            <button class="btn btn-small" onclick="downloadArticle()">下载</button>
+                            <button class="btn btn-small" onclick="copyArticle()">复制</button>
+                        </div>
+                    </div>
+                    <div id="write-loading" class="loading hidden">
+                        <div class="spinner"></div>
+                        <span>正在生成，请稍候...</span>
+                    </div>
+                    <div id="write-output" class="article-content"></div>
+                </div>
+            </div>
+
+            <!-- ==================== 作家管理 ==================== -->
+            <div class="tab-panel" id="tab-authors">
+                <h2>作家管理</h2>
+                <div class="card">
+                    <h3>创建新作家</h3>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label>作家名称</label>
+                            <input type="text" id="create-name" placeholder="例如：鲁迅、莫言">
+                        </div>
+                        <div class="form-group">
+                            <label>上传作品文件</label>
+                            <input type="file" id="create-files" multiple accept=".txt,.epub">
+                            <small>支持 .txt 和 .epub 格式，可多选</small>
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" onclick="handleCreate()">创建作家</button>
+                </div>
+                <div class="card">
+                    <h3>已有作家</h3>
+                    <div id="authors-list" class="authors-grid">
+                        <div class="loading">加载中...</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ==================== 模型配置 ==================== -->
+            <div class="tab-panel" id="tab-settings">
+                <h2>模型配置</h2>
+
+                <!-- 当前配置 -->
+                <div class="card">
+                    <h3>当前配置（.env）</h3>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label>LLM Provider</label>
+                            <select id="cfg-llm-provider">
+                                <option value="openai">openai（兼容 OpenAI API 格式）</option>
+                                <option value="anthropic">anthropic</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>LLM 模型名称</label>
+                            <input type="text" id="cfg-llm-model" placeholder="deepseek-chat">
+                        </div>
+                        <div class="form-group">
+                            <label>LLM API 地址</label>
+                            <input type="text" id="cfg-llm-url" placeholder="https://api.deepseek.com/v1">
+                        </div>
+                        <div class="form-group">
+                            <label>LLM API 密钥 <span id="cfg-llm-key-status" class="badge"></span></label>
+                            <input type="password" id="cfg-llm-key" placeholder="留空则不修改">
+                        </div>
+                        <div class="form-group">
+                            <label>Embedding Provider</label>
+                            <select id="cfg-emb-provider">
+                                <option value="dashscope">dashscope（千问）</option>
+                                <option value="openai">openai</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Embedding 模型名称</label>
+                            <input type="text" id="cfg-emb-model" placeholder="text-embedding-v3">
+                        </div>
+                        <div class="form-group">
+                            <label>Embedding API 密钥 <span id="cfg-emb-key-status" class="badge"></span></label>
+                            <input type="password" id="cfg-emb-key" placeholder="留空则不修改">
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" onclick="handleSaveConfig()">保存配置</button>
+                    <p class="hint">保存后需重启服务生效。密钥留空表示不修改已有值。</p>
+                </div>
+
+                <!-- 自定义模型列表 -->
+                <div class="card">
+                    <div class="card-header">
+                        <h3>模型列表（点击快速填入配置）</h3>
+                        <button class="btn btn-small btn-primary" onclick="handleAddModel()">+ 添加模型</button>
+                    </div>
+                    <div id="models-list" class="models-grid">
+                        <div class="loading">加载中...</div>
+                    </div>
+                    <!-- 添加模型弹窗 -->
+                    <div id="model-form" class="model-form hidden">
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label>显示名称</label>
+                                <input type="text" id="model-label" placeholder="例如：我的 DeepSeek">
+                            </div>
+                            <div class="form-group">
+                                <label>Provider</label>
+                                <select id="model-provider">
+                                    <option value="openai">openai</option>
+                                    <option value="anthropic">anthropic</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>模型名称</label>
+                                <input type="text" id="model-name" placeholder="deepseek-chat">
+                            </div>
+                            <div class="form-group">
+                                <label>API 地址</label>
+                                <input type="text" id="model-url" placeholder="https://api.deepseek.com/v1">
+                            </div>
+                        </div>
+                        <div class="btn-row">
+                            <button class="btn btn-primary" onclick="handleSaveModel()">保存</button>
+                            <button class="btn btn-small" onclick="handleCancelModel()">取消</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <div id="toast" class="toast hidden"></div>
+    <script src="/static/app.js"></script>
+</body>
+</html>
