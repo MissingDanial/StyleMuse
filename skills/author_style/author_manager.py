@@ -13,6 +13,7 @@ from .config import AUTHORS_DIR, get_author_dir, save_author_config, get_llm
 from .loader import load_all_chunks
 from .analyzer import analyze_author
 from .logger import get_logger
+from .safety import count_files
 
 log = get_logger(__name__)
 
@@ -208,13 +209,14 @@ def _build_vector_index(name: str, author_dir: Path):
         log.warning("  无文档可索引")
 
 
-def delete_author(name: str, confirm: bool = True) -> bool:
+def delete_author(name: str, confirm: bool = True, max_files: int = 3) -> bool:
     """
     删除作家工作空间。
 
     Args:
         name: 作家名称
         confirm: 是否需要确认
+        max_files: 单次最多允许删除的文件数
 
     Returns:
         是否成功删除
@@ -224,8 +226,14 @@ def delete_author(name: str, confirm: bool = True) -> bool:
         log.warning(f"作家 '{name}' 不存在")
         return False
 
+    file_count = count_files(author_dir)
+    if file_count > max_files:
+        raise ValueError(
+            f"作家 '{name}' 包含 {file_count} 个文件，超过单次最多删除 {max_files} 个文件的限制"
+        )
+
     if confirm:
-        answer = input(f"确认删除作家 '{name}' 及其所有数据? (y/N): ")
+        answer = input(f"确认删除作家 '{name}' 及其 {file_count} 个文件? (y/N): ")
         if answer.lower() != "y":
             log.info("已取消")
             return False

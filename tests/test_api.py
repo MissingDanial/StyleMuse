@@ -82,6 +82,42 @@ class TestApiListAuthors:
 
 
 # ---------------------------------------------------------------------------
+# DELETE /api/author/<name>
+# ---------------------------------------------------------------------------
+
+class TestApiDeleteAuthor:
+    """Tests for DELETE /api/author/<name>."""
+
+    def test_requires_explicit_confirmation(self, client):
+        resp = client.delete("/api/author/test_author")
+        assert resp.status_code == 400
+        body = resp.get_json()
+        assert body["ok"] is False
+        assert "confirm=true" in body["error"]
+
+    def test_deletes_after_confirmation(self, client):
+        with patch("app.delete_author", return_value=True) as mocked:
+            resp = client.delete(
+                "/api/author/test_author",
+                data=json.dumps({"confirm": True}),
+                content_type="application/json",
+            )
+        assert resp.status_code == 200
+        assert resp.get_json()["ok"] is True
+        mocked.assert_called_once_with("test_author", confirm=False)
+
+    def test_returns_400_when_delete_limit_exceeded(self, client):
+        with patch("app.delete_author", side_effect=ValueError("超过单次最多删除 3 个文件")):
+            resp = client.delete(
+                "/api/author/test_author",
+                data=json.dumps({"confirm": True}),
+                content_type="application/json",
+            )
+        assert resp.status_code == 400
+        assert resp.get_json()["ok"] is False
+
+
+# ---------------------------------------------------------------------------
 # GET /api/config
 # ---------------------------------------------------------------------------
 

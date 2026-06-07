@@ -16,6 +16,7 @@ from skills.author_style.analyzer import (
     collect_sample_texts,
     parse_analysis_result,
 )
+from skills.author_style.safety import safe_filename, validate_simple_name
 
 
 # ---------------------------------------------------------------------------
@@ -88,6 +89,25 @@ class TestExtractTextFromResponse:
         """None is converted to the string 'None'."""
         result = extract_text_from_response(None)
         assert result == "None"
+
+
+# ---------------------------------------------------------------------------
+# Tests for path and filename safety helpers
+# ---------------------------------------------------------------------------
+
+class TestSafetyHelpers:
+    """Tests for path safety helper functions."""
+
+    def test_validate_simple_name_accepts_chinese_name(self):
+        assert validate_simple_name("鲁迅", "作家名称") == "鲁迅"
+
+    def test_validate_simple_name_rejects_path_traversal(self):
+        with pytest.raises(ValueError):
+            validate_simple_name("..\\outside", "作家名称")
+
+    def test_safe_filename_preserves_chinese_and_removes_separators(self):
+        result = safe_filename("../故乡:的狗", default="article", suffix=".txt")
+        assert result == "故乡_的狗.txt"
 
 
 # ---------------------------------------------------------------------------

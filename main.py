@@ -16,6 +16,7 @@ project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 from skills.author_style import AuthorStyleSkill, create_author, list_authors, delete_author, get_author_info
+from skills.author_style.safety import safe_filename
 
 
 def cmd_create(args):
@@ -57,7 +58,7 @@ def cmd_write(args):
         # 保存到作家目录
         output_dir = Path("authors") / args.author / "output"
         output_dir.mkdir(parents=True, exist_ok=True)
-        filename = output_dir / f"{args.topic}.txt"
+        filename = output_dir / safe_filename(args.topic, default="article", suffix=".txt")
         with open(filename, "w", encoding="utf-8") as f:
             f.write(article)
         print(f"文章已保存到: {filename}")
@@ -119,7 +120,7 @@ def cmd_info(args):
 
 def cmd_delete(args):
     """删除作家"""
-    delete_author(args.author, confirm=not args.force)
+    delete_author(args.author, confirm=True)
 
 
 def main():
@@ -165,7 +166,6 @@ def main():
     # delete 子命令
     delete_parser = subparsers.add_parser("delete", help="删除作家")
     delete_parser.add_argument("--author", "-a", type=str, required=True, help="作家名称")
-    delete_parser.add_argument("--force", "-f", action="store_true", help="跳过确认")
 
     args = parser.parse_args()
 

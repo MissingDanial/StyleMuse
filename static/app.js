@@ -28,6 +28,16 @@ function showToast(msg, type = "info") {
 
 const $ = (id) => document.getElementById(id);
 
+function escapeHtml(value) {
+    return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;",
+    }[char]));
+}
+
 // ============================================================================
 // Tab 切换
 // ============================================================================
@@ -64,22 +74,22 @@ async function loadAuthors() {
 
 function renderAuthors(authors) {
     if (!authors.length) {
-        $("authors-list").innerHTML = '<div class="loading">暂无作家，请在上方创建</div>';
+        $("authors-list").innerHTML = '<div class="empty-state">暂无作家，请在上方创建</div>';
         return;
     }
     $("authors-list").innerHTML = authors.map((a) => `
         <div class="author-card">
             <div class="author-info">
-                <h4>${a.name}</h4>
+                <h4>${escapeHtml(a.name)}</h4>
                 <div class="meta">
-                    <span class="${a.has_style_guide ? "badge-ok" : "badge-no"}"></span>
-                    <span class="${a.has_vector_store ? "badge-ok" : "badge-no"}"> 向量库</span>
-                    <span>${a.txt_files} txt / ${a.epub_files} epub</span>
+                    <span class="meta-chip ${a.has_style_guide ? "badge-ok" : "badge-no"}">风格指南</span>
+                    <span class="meta-chip ${a.has_vector_store ? "badge-ok" : "badge-no"}">向量库</span>
+                    <span class="meta-chip">${Number(a.txt_files) || 0} txt / ${Number(a.epub_files) || 0} epub</span>
                 </div>
             </div>
             <div class="author-actions">
-                <button class="btn btn-small" onclick="selectAuthorForWrite('${a.name}')">写作</button>
-                <button class="btn btn-small btn-danger" onclick="handleDelete('${a.name}')">删除</button>
+                <button class="btn btn-small" data-author-action="write" data-author-name="${escapeHtml(a.name)}">写作</button>
+                <button class="btn btn-small btn-danger" data-author-action="delete" data-author-name="${escapeHtml(a.name)}">删除</button>
             </div>
         </div>
     `).join("");
@@ -123,7 +133,10 @@ async function handleCreate() {
 async function handleDelete(name) {
     if (!confirm(`确认删除作家「${name}」及其所有数据？`)) return;
     try {
-        await api(`/api/author/${name}`, { method: "DELETE" });
+        await api(`/api/author/${name}`, {
+            method: "DELETE",
+            body: JSON.stringify({ confirm: true }),
+        });
         showToast(`已删除`, "success");
         loadAuthors(); loadAuthorSelect();
     } catch (e) { showToast("删除失败: " + e.message, "error"); }
@@ -154,6 +167,7 @@ async function handleWrite() {
 
     $("write-result").classList.remove("hidden");
     $("write-loading").classList.remove("hidden");
+    $("write-check").classList.add("hidden");
     $("write-output").textContent = "";
     $("write-saved-path").textContent = "";
 
@@ -183,9 +197,11 @@ async function handleWrite() {
             lastTopic = data.topic;
             $("write-output").textContent = data.article;
             $("write-saved-path").textContent = data.saved_path ? `已保存: ${data.saved_path}` : "";
+            renderPlagiarismResult(data.plagiarism);
             showToast("生成完成", "success");
         } catch (e) {
             $("write-output").textContent = "生成失败: " + e.message;
+            $("write-check").classList.add("hidden");
             showToast("生成失败", "error");
         }
     }
@@ -236,6 +252,7 @@ async function handleWriteStream(payload) {
                     lastTopic = event.topic;
                     $("write-output").textContent = event.article;
                     $("write-saved-path").textContent = event.saved_path ? `已保存: ${event.saved_path}` : "";
+                    renderPlagiarismResult(event.plagiarism);
                     showToast("生成完成", "success");
                     succeeded = true;
                 } else if (event.type === "error") {
@@ -256,6 +273,29 @@ async function handleWriteStream(payload) {
     }
 
     return succeeded;
+}
+
+function renderPlagiarismResult(result) {
+    const el = $("write-check");
+    if (!el) return;
+    if (!result) {
+        el.className = "quality-strip neutral";
+        el.innerHTML = "<strong>重复检测</strong><span>未启用</span><span>当前生成未返回检测结果</span>";
+        return;
+    }
+
+    const passed = result.passed;
+    const stateClass = passed === false ? "warning" : passed === null ? "neutral" : "ok";
+    const title = passed === false ? "需要复核" : passed === null ? "检测未完成" : "检测通过";
+    const maxCommon = Number.isFinite(Number(result.max_common)) ? `最长连续重复 ${Number(result.max_common)} 字` : "无重复长度数据";
+    const warning = result.warning || (passed === false ? "生成内容与原文存在较长连续重复" : "未发现超限连续重复");
+
+    el.className = `quality-strip ${stateClass}`;
+    el.innerHTML = `
+        <strong>${escapeHtml(title)}</strong>
+        <span>${escapeHtml(maxCommon)}</span>
+        <span>${escapeHtml(warning)}</span>
+    `;
 }
 
 function copyArticle() {
@@ -365,17 +405,17 @@ async function loadModels() {
 
 function renderModels(models) {
     if (!models.length) {
-        $("models-list").innerHTML = '<div class="loading">暂无模型，点击上方添加</div>';
+        $("models-list").innerHTML = '<div class="empty-state">暂无模型，点击上方添加</div>';
         return;
     }
     $("models-list").innerHTML = models.map((m, i) => `
-        <div class="model-card" onclick="applyModel(${i})" title="点击填入配置">
+        <div class="model-card" data-model-index="${i}" title="点击填入配置">
             <div class="model-info">
-                <strong>${m.label || m.name}</strong>
-                <code>${m.provider} / ${m.name}${m.base_url ? " / " + m.base_url : ""}</code>
+                <strong>${escapeHtml(m.label || m.name)}</strong>
+                <code>${escapeHtml(`${m.provider || ""} / ${m.name || ""}${m.base_url ? " / " + m.base_url : ""}`)}</code>
             </div>
             <div class="model-actions">
-                <button class="btn btn-small btn-danger" onclick="event.stopPropagation(); handleDeleteModel(${i})">删除</button>
+                <button class="btn btn-small btn-danger" data-model-action="delete" data-model-index="${i}">删除</button>
             </div>
         </div>
     `).join("");
@@ -448,4 +488,21 @@ async function handleDeleteModel(index) {
 
 document.addEventListener("DOMContentLoaded", () => {
     loadAuthorSelect();
+    $("authors-list")?.addEventListener("click", (event) => {
+        const button = event.target.closest("[data-author-action]");
+        if (!button) return;
+        const name = button.dataset.authorName;
+        if (button.dataset.authorAction === "write") selectAuthorForWrite(name);
+        if (button.dataset.authorAction === "delete") handleDelete(name);
+    });
+    $("models-list")?.addEventListener("click", (event) => {
+        const deleteButton = event.target.closest("[data-model-action='delete']");
+        if (deleteButton) {
+            event.stopPropagation();
+            handleDeleteModel(Number(deleteButton.dataset.modelIndex));
+            return;
+        }
+        const card = event.target.closest("[data-model-index]");
+        if (card) applyModel(Number(card.dataset.modelIndex));
+    });
 });

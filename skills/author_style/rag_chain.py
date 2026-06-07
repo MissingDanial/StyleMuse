@@ -21,6 +21,7 @@ from .config import (
 from .loader import load_all_chunks
 from .style_prompt import build_system_prompt, build_user_prompt
 from .logger import get_logger
+from .plagiarism import check_plagiarism
 
 log = get_logger(__name__)
 
@@ -120,7 +121,8 @@ def retrieve_relevant_context(
 
         filtered = []
         for doc, score in results_with_scores:
-            if score >= similarity_threshold:
+            # FAISS returns a distance score here: lower means more relevant.
+            if score <= similarity_threshold:
                 filtered.append(doc)
 
         random.shuffle(filtered)
@@ -185,6 +187,7 @@ class AuthorStyleSkill:
         # 向量库（懒加载）
         self._vector_store = None
         self._embeddings = None
+        self.last_plagiarism_result = None
 
     def _load_style_guide(self) -> str:
         """加载风格指南"""
@@ -295,7 +298,9 @@ class AuthorStyleSkill:
         ]
 
         response = self.llm.invoke(messages)
-        return extract_text_from_response(response.content)
+        article = extract_text_from_response(response.content)
+        self.last_plagiarism_result = self._check_plagiarism(article)
+        return article
 
     def write_stream(
         self,
@@ -361,10 +366,36 @@ class AuthorStyleSkill:
             HumanMessage(content=user_prompt),
         ]
 
+        article_chunks = []
         for chunk in self.llm.stream(messages):
             text = extract_text_from_response(chunk.content)
             if text:
+                article_chunks.append(text)
                 yield text
+        self.last_plagiarism_result = self._check_plagiarism("".join(article_chunks))
+
+    def _check_plagiarism(self, article: str) -> dict:
+        """Run best-effort duplicate-text detection against author chunks."""
+        if not self.config.get("plagiarism_check_enabled", True):
+            return None
+        try:
+            source_documents = load_all_chunks(
+                self.author_dir,
+                chunk_size=self.config["chunk_size"],
+                chunk_overlap=self.config["chunk_overlap"],
+            )
+            result = check_plagiarism(
+                generated=article,
+                source_documents=source_documents,
+                max_common_len=self.config.get("max_common_len", 15),
+                similarity_threshold=self.config.get("plagiarism_similarity_threshold", 0.6),
+            )
+            if not result.get("passed"):
+                log.warning(result.get("warning", "生成内容未通过重复检测"))
+            return result
+        except Exception as e:
+            log.error(f"重复检测失败: {e}")
+            return {"passed": None, "warning": f"重复检测失败: {e}"}
 
     def write_batch(self, topics: List[str], **kwargs) -> Dict[str, str]:
         """

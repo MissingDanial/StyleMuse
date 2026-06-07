@@ -9,4 +9,7 @@ services:
       - ./logs:/app/logs
     env_file:
       - .env
+    environment:
+      FLASK_HOST: 0.0.0.0
+      FLASK_DEBUG: "0"
     restart: unless-stopped

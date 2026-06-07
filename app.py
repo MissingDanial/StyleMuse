@@ -26,11 +26,13 @@ from skills.author_style import (
     delete_author,
     get_author_info,
 )
+from skills.author_style.safety import resolve_under_base, safe_filename
 
 app = Flask(__name__, static_folder="static")
 
 ENV_FILE = project_root / ".env"
 MODELS_FILE = project_root / "models.json"
+SUPPORTED_UPLOAD_SUFFIXES = {".txt", ".epub"}
 
 
 # ============================================================================
@@ -76,20 +78,30 @@ def api_create_author():
             if not name:
                 return jsonify({"ok": False, "error": "缺少作家名称"}), 400
 
-            import tempfile, shutil
-            temp_dir = Path(tempfile.mkdtemp(prefix="author_upload_"))
             files = request.files.getlist("files")
             if not files:
                 return jsonify({"ok": False, "error": "请上传至少一个文件"}), 400
 
+            upload_files = []
             for f in files:
-                if f.filename:
-                    (temp_dir / f.filename).write_bytes(f.read())
+                if not f.filename:
+                    continue
+                suffix = Path(f.filename).suffix.lower()
+                if suffix not in SUPPORTED_UPLOAD_SUFFIXES:
+                    return jsonify({"ok": False, "error": f"不支持的文件类型: {suffix}"}), 400
+                upload_files.append((f, suffix))
 
-            try:
-                create_author(name=name, source_path=str(temp_dir))
-            finally:
-                shutil.rmtree(temp_dir, ignore_errors=True)
+            if not upload_files:
+                return jsonify({"ok": False, "error": "没有可保存的上传文件"}), 400
+
+            author_dir = create_author(name=name, source_path=None, analyze=False, build_index=False)
+            for f, suffix in upload_files:
+                target_dir = author_dir / ("epub" if suffix == ".epub" else "works")
+                target_dir.mkdir(parents=True, exist_ok=True)
+                filename = _unique_path(target_dir, safe_filename(Path(f.filename).stem, "upload", suffix))
+                filename.write_bytes(f.read())
+
+            create_author(name=name, source_path=None, analyze=True, build_index=True)
         else:
             data = request.get_json()
             if not data:
@@ -97,7 +109,9 @@ def api_create_author():
             name = data.get("name", "").strip()
             if not name:
                 return jsonify({"ok": False, "error": "缺少作家名称"}), 400
-            create_author(name=name, source_path=data.get("source_path") or None)
+            if data.get("source_path"):
+                return jsonify({"ok": False, "error": "Web API 不接受 source_path，请使用文件上传"}), 400
+            create_author(name=name, source_path=None)
 
         info = get_author_info(name)
         return jsonify({"ok": True, "data": info})
@@ -109,8 +123,13 @@ def api_create_author():
 @app.route("/api/author/<name>", methods=["DELETE"])
 def api_delete_author(name):
     try:
+        data = request.get_json(silent=True) or {}
+        if data.get("confirm") is not True:
+            return jsonify({"ok": False, "error": "删除前必须确认 confirm=true"}), 400
         success = delete_author(name, confirm=False)
         return jsonify({"ok": success})
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
@@ -150,21 +169,8 @@ def api_write():
         )
 
         # 保存到指定位置
-        save_dir = data.get("save_dir", "").strip()
-        saved_path = ""
-        if save_dir:
-            save_path = Path(save_dir)
-            save_path.mkdir(parents=True, exist_ok=True)
-            filename = save_path / f"{topic}.txt"
-            filename.write_text(article, encoding="utf-8")
-            saved_path = str(filename)
-        else:
-            # 默认保存到作家 output 目录
-            output_dir = project_root / "authors" / author / "output"
-            output_dir.mkdir(parents=True, exist_ok=True)
-            filename = output_dir / f"{topic}.txt"
-            filename.write_text(article, encoding="utf-8")
-            saved_path = str(filename)
+        filename = _save_article(author, topic, article, data.get("save_dir", ""))
+        saved_path = str(filename)
 
         return jsonify({
             "ok": True,
@@ -173,6 +179,7 @@ def api_write():
                 "topic": topic,
                 "author": author,
                 "saved_path": saved_path,
+                "plagiarism": skill.last_plagiarism_result,
             },
         })
 
@@ -229,21 +236,10 @@ def api_write_stream():
 
                 # 保存文章
                 article = "".join(article_chunks)
-                saved_path = ""
-                if save_dir:
-                    save_path = Path(save_dir)
-                    save_path.mkdir(parents=True, exist_ok=True)
-                    filename = save_path / f"{topic}.txt"
-                    filename.write_text(article, encoding="utf-8")
-                    saved_path = str(filename)
-                else:
-                    output_dir = project_root / "authors" / author / "output"
-                    output_dir.mkdir(parents=True, exist_ok=True)
-                    filename = output_dir / f"{topic}.txt"
-                    filename.write_text(article, encoding="utf-8")
-                    saved_path = str(filename)
+                filename = _save_article(author, topic, article, save_dir)
+                saved_path = str(filename)
 
-                yield f"data: {json.dumps({'type': 'done', 'article': article, 'topic': topic, 'author': author, 'saved_path': saved_path}, ensure_ascii=False)}\n\n"
+                yield f"data: {json.dumps({'type': 'done', 'article': article, 'topic': topic, 'author': author, 'saved_path': saved_path, 'plagiarism': skill.last_plagiarism_result}, ensure_ascii=False)}\n\n"
             except Exception as e:
                 traceback.print_exc()
                 yield f"data: {json.dumps({'type': 'error', 'error': str(e)}, ensure_ascii=False)}\n\n"
@@ -268,7 +264,7 @@ def api_download():
     try:
         data = request.get_json()
         content = data.get("content", "")
-        filename = data.get("filename", "article.txt")
+        filename = safe_filename(data.get("filename", "article"), default="article", suffix=".txt")
 
         import io
         buf = io.BytesIO(content.encode("utf-8"))
@@ -460,9 +456,48 @@ def _save_models(models: list):
     MODELS_FILE.write_text(json.dumps(models, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def _unique_path(directory: Path, filename: str) -> Path:
+    """Return a non-conflicting file path in a directory."""
+    candidate = directory / filename
+    if not candidate.exists():
+        return candidate
+    stem = candidate.stem
+    suffix = candidate.suffix
+    for i in range(2, 1000):
+        next_candidate = directory / f"{stem}_{i}{suffix}"
+        if not next_candidate.exists():
+            return next_candidate
+    raise ValueError("无法生成不冲突的文件名")
+
+
+def _resolve_save_dir(save_dir: str, author: str) -> Path:
+    """Resolve the requested save directory within the project workspace."""
+    if save_dir and save_dir.strip():
+        candidate = Path(save_dir.strip())
+        if not candidate.is_absolute():
+            candidate = project_root / candidate
+        target = resolve_under_base(project_root, candidate, "保存位置")
+    else:
+        target = project_root / "authors" / author / "output"
+    target.mkdir(parents=True, exist_ok=True)
+    return target
+
+
+def _save_article(author: str, topic: str, article: str, save_dir: str = "") -> Path:
+    """Save a generated article using a sanitized topic filename."""
+    target_dir = _resolve_save_dir(save_dir, author)
+    filename = _unique_path(target_dir, safe_filename(topic, default="article", suffix=".txt"))
+    filename.write_text(article, encoding="utf-8")
+    return filename
+
+
 if __name__ == "__main__":
     print("=" * 50)
     print("通用作家风格仿写 Skill")
     print("访问地址: http://localhost:5000")
     print("=" * 50)
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(
+        host=os.getenv("FLASK_HOST", "127.0.0.1"),
+        port=int(os.getenv("FLASK_PORT", "5000")),
+        debug=os.getenv("FLASK_DEBUG", "0") == "1",
+    )

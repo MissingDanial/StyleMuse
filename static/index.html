@@ -29,9 +29,19 @@
 
         <!-- 主内容区 -->
         <main class="content">
+            <div class="content-inner">
             <!-- ==================== 写作工坊 ==================== -->
             <div class="tab-panel active" id="tab-write">
-                <h2>写作工坊</h2>
+                <header class="page-header">
+                    <div>
+                        <p class="eyebrow">StyleMuse</p>
+                        <h2>写作工坊</h2>
+                    </div>
+                </header>
+                <section class="workspace-panel">
+                    <div class="panel-head">
+                        <h3>生成设置</h3>
+                    </div>
                 <div class="form-grid">
                     <div class="form-group">
                         <label>选择作家</label>
@@ -63,11 +73,12 @@
                     </div>
                 </div>
                 <div class="form-group">
-                    <label>保存位置（留空则保存到作家 output 目录）</label>
+                    <label>保存位置</label>
                     <div class="input-with-btn">
-                        <input type="text" id="write-save-dir" placeholder="点击右侧按钮选择文件夹">
+                        <input type="text" id="write-save-dir" placeholder="留空则保存到作家 output 目录">
                         <button class="btn btn-small" onclick="handleBrowseFolder()">浏览...</button>
                     </div>
+                    <small>自定义路径需位于项目目录内</small>
                 </div>
                 <div class="form-group">
                     <label class="checkbox-label">
@@ -93,13 +104,20 @@
                         <div class="spinner"></div>
                         <span>正在生成，请稍候...</span>
                     </div>
+                    <div id="write-check" class="quality-strip hidden"></div>
                     <div id="write-output" class="article-content"></div>
                 </div>
+                </section>
             </div>
 
             <!-- ==================== 作家管理 ==================== -->
             <div class="tab-panel" id="tab-authors">
-                <h2>作家管理</h2>
+                <header class="page-header">
+                    <div>
+                        <p class="eyebrow">Corpus</p>
+                        <h2>作家管理</h2>
+                    </div>
+                </header>
                 <div class="card">
                     <h3>创建新作家</h3>
                     <div class="form-grid">
@@ -125,7 +143,12 @@
 
             <!-- ==================== 模型配置 ==================== -->
             <div class="tab-panel" id="tab-settings">
-                <h2>模型配置</h2>
+                <header class="page-header">
+                    <div>
+                        <p class="eyebrow">Runtime</p>
+                        <h2>模型配置</h2>
+                    </div>
+                </header>
 
                 <!-- 当前配置 -->
                 <div class="card">
@@ -208,6 +231,7 @@
                         </div>
                     </div>
                 </div>
+            </div>
             </div>
         </main>
     </div>

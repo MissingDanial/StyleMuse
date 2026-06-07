@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import Optional
 from dotenv import load_dotenv
 
+from .safety import validate_simple_name
+
 load_dotenv()
 
 # ============================================================================
@@ -118,8 +120,14 @@ DEFAULTS = {
 
     # 检索
     "retrieval_top_k": 3,
+    # FAISS similarity_search_with_score 返回距离，越小越相关。
     "similarity_threshold": 0.15,
     "retrieval_multiplier": 3,
+
+    # 生成后重复检测
+    "plagiarism_check_enabled": True,
+    "max_common_len": 15,
+    "plagiarism_similarity_threshold": 0.6,
 
     # 生成
     "max_tokens": 2500,
@@ -143,7 +151,7 @@ DEFAULTS = {
 
 def get_author_dir(name: str) -> Path:
     """获取作家工作空间目录"""
-    return AUTHORS_DIR / name
+    return AUTHORS_DIR / validate_simple_name(name, "作家名称")
 
 
 def load_author_config(name: str) -> dict:
