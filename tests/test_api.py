@@ -240,6 +240,55 @@ class TestApiSaveModels:
         saved = json.loads(models_file.read_text(encoding="utf-8"))
         assert saved == []
 
+    def test_rejects_invalid_models_payload(self, client):
+        resp = client.post(
+            "/api/models",
+            data=json.dumps({"models": {"name": "not-a-list"}}),
+            content_type="application/json",
+        )
+
+        assert resp.status_code == 400
+        assert resp.get_json()["ok"] is False
+
+    def test_normalizes_model_provider_and_label(self, client, app_instance):
+        import app as app_module
+        models_file = app_module.MODELS_FILE
+
+        resp = client.post(
+            "/api/models",
+            data=json.dumps({
+                "models": [
+                    {"provider": " OpenAI ", "name": " custom-model ", "base_url": "", "label": ""},
+                ],
+            }),
+            content_type="application/json",
+        )
+
+        assert resp.status_code == 200
+        saved = json.loads(models_file.read_text(encoding="utf-8"))
+        assert saved == [{
+            "provider": "openai",
+            "name": "custom-model",
+            "base_url": "",
+            "label": "custom-model",
+        }]
+
+
+class TestSaveArticle:
+    """Tests for generated article persistence helpers."""
+
+    def test_save_article_uses_unique_filename(self, tmp_path):
+        import app as app_module
+
+        with patch.object(app_module, "project_root", tmp_path):
+            first = app_module._save_article("author", "same topic", "first")
+            second = app_module._save_article("author", "same topic", "second")
+
+        assert first.name == "same topic.txt"
+        assert second.name == "same topic_2.txt"
+        assert first.read_text(encoding="utf-8") == "first"
+        assert second.read_text(encoding="utf-8") == "second"
+
 
 # ---------------------------------------------------------------------------
 # POST /api/download

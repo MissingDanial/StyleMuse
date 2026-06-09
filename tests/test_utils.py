@@ -16,7 +16,7 @@ from skills.author_style.analyzer import (
     collect_sample_texts,
     parse_analysis_result,
 )
-from skills.author_style.safety import safe_filename, validate_simple_name
+from skills.author_style.safety import safe_filename, unique_path, validate_simple_name
 
 
 # ---------------------------------------------------------------------------
@@ -108,6 +108,15 @@ class TestSafetyHelpers:
     def test_safe_filename_preserves_chinese_and_removes_separators(self):
         result = safe_filename("../故乡:的狗", default="article", suffix=".txt")
         assert result == "故乡_的狗.txt"
+
+
+    def test_unique_path_adds_suffix_when_file_exists(self, tmp_path):
+        existing = tmp_path / "article.txt"
+        existing.write_text("old", encoding="utf-8")
+
+        result = unique_path(tmp_path, "article.txt")
+
+        assert result == tmp_path / "article_2.txt"
 
 
 # ---------------------------------------------------------------------------

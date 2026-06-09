@@ -26,13 +26,16 @@ from skills.author_style import (
     delete_author,
     get_author_info,
 )
-from skills.author_style.safety import resolve_under_base, safe_filename
+from skills.author_style.safety import resolve_under_base, safe_filename, unique_path
 
 app = Flask(__name__, static_folder="static")
 
 ENV_FILE = project_root / ".env"
 MODELS_FILE = project_root / "models.json"
 SUPPORTED_UPLOAD_SUFFIXES = {".txt", ".epub"}
+ALLOWED_MODEL_PROVIDERS = {"openai", "anthropic"}
+MAX_CUSTOM_MODELS = 50
+MAX_MODEL_FIELD_LENGTH = 300
 
 
 # ============================================================================
@@ -98,7 +101,7 @@ def api_create_author():
             for f, suffix in upload_files:
                 target_dir = author_dir / ("epub" if suffix == ".epub" else "works")
                 target_dir.mkdir(parents=True, exist_ok=True)
-                filename = _unique_path(target_dir, safe_filename(Path(f.filename).stem, "upload", suffix))
+                filename = unique_path(target_dir, safe_filename(Path(f.filename).stem, "upload", suffix))
                 filename.write_bytes(f.read())
 
             create_author(name=name, source_path=None, analyze=True, build_index=True)
@@ -375,9 +378,13 @@ def api_save_models():
     """保存用户自定义模型列表"""
     try:
         data = request.get_json()
-        models = data.get("models", [])
+        if not isinstance(data, dict):
+            return jsonify({"ok": False, "error": "invalid request body"}), 400
+        models = _validate_models(data.get("models", []))
         _save_models(models)
         return jsonify({"ok": True})
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
@@ -456,18 +463,42 @@ def _save_models(models: list):
     MODELS_FILE.write_text(json.dumps(models, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def _unique_path(directory: Path, filename: str) -> Path:
-    """Return a non-conflicting file path in a directory."""
-    candidate = directory / filename
-    if not candidate.exists():
-        return candidate
-    stem = candidate.stem
-    suffix = candidate.suffix
-    for i in range(2, 1000):
-        next_candidate = directory / f"{stem}_{i}{suffix}"
-        if not next_candidate.exists():
-            return next_candidate
-    raise ValueError("无法生成不冲突的文件名")
+def _validate_models(models: list) -> list:
+    """Validate and normalize custom model entries before persisting them."""
+    if not isinstance(models, list):
+        raise ValueError("models must be a list")
+    if len(models) > MAX_CUSTOM_MODELS:
+        raise ValueError(f"models cannot contain more than {MAX_CUSTOM_MODELS} entries")
+
+    cleaned = []
+    for index, model in enumerate(models, start=1):
+        if not isinstance(model, dict):
+            raise ValueError(f"model #{index} must be an object")
+
+        provider = str(model.get("provider", "openai")).strip().lower()
+        name = str(model.get("name", "")).strip()
+        base_url = str(model.get("base_url", "")).strip()
+        label = str(model.get("label", "")).strip() or name
+
+        if provider not in ALLOWED_MODEL_PROVIDERS:
+            raise ValueError(f"unsupported provider for model #{index}: {provider}")
+        if not name:
+            raise ValueError(f"model #{index} is missing name")
+        for field_name, value in {
+            "name": name,
+            "base_url": base_url,
+            "label": label,
+        }.items():
+            if len(value) > MAX_MODEL_FIELD_LENGTH:
+                raise ValueError(f"model #{index} {field_name} is too long")
+
+        cleaned.append({
+            "provider": provider,
+            "name": name,
+            "base_url": base_url,
+            "label": label,
+        })
+    return cleaned
 
 
 def _resolve_save_dir(save_dir: str, author: str) -> Path:
@@ -486,7 +517,7 @@ def _resolve_save_dir(save_dir: str, author: str) -> Path:
 def _save_article(author: str, topic: str, article: str, save_dir: str = "") -> Path:
     """Save a generated article using a sanitized topic filename."""
     target_dir = _resolve_save_dir(save_dir, author)
-    filename = _unique_path(target_dir, safe_filename(topic, default="article", suffix=".txt"))
+    filename = unique_path(target_dir, safe_filename(topic, default="article", suffix=".txt"))
     filename.write_text(article, encoding="utf-8")
     return filename
 

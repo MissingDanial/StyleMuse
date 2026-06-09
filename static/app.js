@@ -240,26 +240,29 @@ async function handleWriteStream(payload) {
             const jsonStr = line.slice(6).trim();
             if (!jsonStr) continue;
 
+            let event;
             try {
-                const event = JSON.parse(jsonStr);
-                if (event.type === "chunk") {
-                    article += event.content;
-                    $("write-output").textContent = article;
-                    // Auto-scroll to bottom
-                    $("write-output").scrollTop = $("write-output").scrollHeight;
-                } else if (event.type === "done") {
-                    lastArticle = event.article;
-                    lastTopic = event.topic;
-                    $("write-output").textContent = event.article;
-                    $("write-saved-path").textContent = event.saved_path ? `已保存: ${event.saved_path}` : "";
-                    renderPlagiarismResult(event.plagiarism);
-                    showToast("生成完成", "success");
-                    succeeded = true;
-                } else if (event.type === "error") {
-                    throw new Error(event.error);
-                }
+                event = JSON.parse(jsonStr);
             } catch (parseErr) {
                 console.warn("SSE parse error:", parseErr);
+                continue;
+            }
+
+            if (event.type === "chunk") {
+                article += event.content;
+                $("write-output").textContent = article;
+                // Auto-scroll to bottom
+                $("write-output").scrollTop = $("write-output").scrollHeight;
+            } else if (event.type === "done") {
+                lastArticle = event.article;
+                lastTopic = event.topic;
+                $("write-output").textContent = event.article;
+                $("write-saved-path").textContent = event.saved_path ? `已保存: ${event.saved_path}` : "";
+                renderPlagiarismResult(event.plagiarism);
+                showToast("生成完成", "success");
+                succeeded = true;
+            } else if (event.type === "error") {
+                throw new Error(event.error || "stream failed");
             }
         }
     }
@@ -453,9 +456,8 @@ async function handleSaveModel() {
     modelsCache.push({ provider, name, base_url: url, label: label || name });
 
     try {
-        await fetch(API + "/api/models", {
+        await api("/api/models", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ models: modelsCache }),
         });
         renderModels(modelsCache);
@@ -470,9 +472,8 @@ async function handleDeleteModel(index) {
     if (!confirm("确认删除此模型？")) return;
     modelsCache.splice(index, 1);
     try {
-        await fetch(API + "/api/models", {
+        await api("/api/models", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ models: modelsCache }),
         });
         renderModels(modelsCache);

@@ -16,7 +16,8 @@ project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 from skills.author_style import AuthorStyleSkill, create_author, list_authors, delete_author, get_author_info
-from skills.author_style.safety import safe_filename
+from skills.author_style.config import get_author_dir
+from skills.author_style.safety import safe_filename, unique_path
 
 
 def cmd_create(args):
@@ -56,9 +57,9 @@ def cmd_write(args):
         )
 
         # 保存到作家目录
-        output_dir = Path("authors") / args.author / "output"
+        output_dir = get_author_dir(args.author) / "output"
         output_dir.mkdir(parents=True, exist_ok=True)
-        filename = output_dir / safe_filename(args.topic, default="article", suffix=".txt")
+        filename = unique_path(output_dir, safe_filename(args.topic, default="article", suffix=".txt"))
         with open(filename, "w", encoding="utf-8") as f:
             f.write(article)
         print(f"文章已保存到: {filename}")

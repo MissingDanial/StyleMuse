@@ -41,6 +41,21 @@ def safe_filename(value: str, default: str = "untitled", suffix: str = "") -> st
     return f"{stem}{suffix}"
 
 
+def unique_path(directory: Path, filename: str) -> Path:
+    """Return a non-conflicting file path in a directory."""
+    candidate = directory / filename
+    if not candidate.exists():
+        return candidate
+
+    stem = candidate.stem
+    suffix = candidate.suffix
+    for i in range(2, 1000):
+        next_candidate = directory / f"{stem}_{i}{suffix}"
+        if not next_candidate.exists():
+            return next_candidate
+    raise ValueError("could not generate a unique filename")
+
+
 def resolve_under_base(base_dir: Path, candidate: Path, field_name: str = "path") -> Path:
     """Resolve a path and ensure it remains inside the provided base directory."""
     base = base_dir.resolve()
