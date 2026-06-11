@@ -20,6 +20,7 @@ StyleMuse 是一个基于 RAG（检索增强生成）的作家风格仿写系统
 ## ✨ 产品预览
 <img width="1440" height="720" alt="写作" src="https://github.com/user-attachments/assets/6924a602-132a-43da-8992-0a1d4658cec4" />
 <img width="1443" height="730" alt="作家管理" src="https://github.com/user-attachments/assets/ad0521e2-fac4-42d7-916f-33c4232e44ed" />
+
 ## 🚀 快速开始
 
 ### 1. 克隆项目
