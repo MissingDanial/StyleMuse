@@ -17,6 +17,9 @@ StyleMuse 是一个基于 RAG（检索增强生成）的作家风格仿写系统
 - **CLI 命令行** — 适合批量生成和脚本集成
 - **Python API** — 可作为库集成到其他项目
 
+## ✨ 产品预览
+<img width="1440" height="720" alt="写作" src="https://github.com/user-attachments/assets/6924a602-132a-43da-8992-0a1d4658cec4" />
+<img width="1443" height="730" alt="作家管理" src="https://github.com/user-attachments/assets/ad0521e2-fac4-42d7-916f-33c4232e44ed" />
 ## 🚀 快速开始
 
 ### 1. 克隆项目
@@ -150,62 +153,6 @@ flowchart TD
     O --> P["记录 LLM 调用日志 step=rewrite"]
     P --> H
 ```
-
-### Agent 闭环职责图
-
-```mermaid
-flowchart LR
-    User["用户\n主题 / 语气 / 篇幅 / 作家"] --> Orchestrator["生成编排层\nAuthorStyleSkill"]
-
-    subgraph AuthorMemory["作家记忆层"]
-        Config["config.json\n模型与生成参数"]
-        StyleGuide["style_guide.md\n风格指南"]
-        FewShot["few_shot.md\n示例片段"]
-        Corpus["works / epub\n原始语料"]
-        VectorStore["FAISS cache\n向量索引"]
-    end
-
-    Config --> Orchestrator
-    StyleGuide --> Orchestrator
-    FewShot --> Orchestrator
-    Corpus --> VectorStore
-    VectorStore --> Retriever["RAG Retriever\n相关片段检索"]
-    Retriever --> Writer["Writer Agent\n生成初稿"]
-    Orchestrator --> Writer
-
-    Writer --> Draft["draft.txt\n文章正文"]
-    Draft --> Checker["Plagiarism Checker\n连续重复 / 相似片段"]
-    Draft --> Reviewer["Review Agent\n需求 / 风格 / 原创性评分"]
-    Checker --> Reviewer
-
-    Reviewer --> Decision{"decision"}
-    Decision -- pass --> Publish["结果展示\n复制 / 下载 / 保存"]
-    Decision -- warn/fail --> Rewrite["Rewrite Agent\n按审稿意见重写"]
-    Rewrite --> Revised["rewrite.txt\n新版本正文"]
-    Revised --> Checker
-
-    Draft --> Version["Version Tracker\n.version.json"]
-    Revised --> Version
-    Reviewer --> ReviewFile["review.json\n审稿报告"]
-    Checker --> Version
-    ReviewFile --> Version
-    Version --> Publish
-
-    Writer --> Logger["LLM Logger\nstep / prompt 摘要 / 耗时 / usage"]
-    Rewrite --> Logger
-    Reviewer --> Logger
-```
-
-这张图对应代码中的核心模块：
-
-- `AuthorStyleSkill`：负责加载作家配置、组织 RAG、调用写作/重写/审稿链路。
-- `Writer Agent`：由 `write` / `write_stream` 触发，生成初稿。
-- `Plagiarism Checker`：由 `check_plagiarism` 执行重复片段和相似度检查。
-- `Review Agent`：由 `review_article` 输出结构化评分、风险等级和修改建议。
-- `Rewrite Agent`：由 `rewrite` 根据审稿意见生成新版本，并再次进入检查闭环。
-- `Version Tracker`：保存 `.version.json`，串联初稿、重写稿、审稿摘要和查重摘要。
-- `LLM Logger`：记录大模型调用链路，便于定位 prompt、模型、耗时和异常问题。
-
 ### 5. Docker 部署（可选）
 
 使用 Docker Compose 一键启动：
