@@ -128,6 +128,8 @@ DEFAULTS = {
     "plagiarism_check_enabled": True,
     "max_common_len": 15,
     "plagiarism_similarity_threshold": 0.6,
+    "review_agent_enabled": True,
+    "review_llm_enabled": False,
 
     # 生成
     "max_tokens": 2500,

@@ -88,8 +88,10 @@ def create_author(
     (author_dir / "epub").mkdir(parents=True, exist_ok=True)
     (author_dir / "cache").mkdir(parents=True, exist_ok=True)
 
-    # 保存配置
-    config = {"name": name}
+    # 保存配置。更新已有作者时保留原始 config.json 中的自定义项，
+    # 避免覆盖模型、温度、检索等作者级配置。
+    config = _load_existing_author_config(author_dir)
+    config["name"] = name
     if extra_config:
         config.update(extra_config)
     save_author_config(name, config)
@@ -174,6 +176,20 @@ def _copy_source_file(source_file: Path, author_dir: Path):
             log.info(f"  复制: {source_file.name}")
     else:
         log.warning(f"  跳过不支持的文件类型: {source_file.suffix}")
+
+
+def _load_existing_author_config(author_dir: Path) -> dict:
+    """Load raw author config without merging global defaults."""
+    config_file = author_dir / "config.json"
+    if not config_file.exists():
+        return {}
+    try:
+        with open(config_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception as e:
+        log.warning(f"  读取已有作家配置失败，将重建基础配置: {e}")
+        return {}
 
 
 def _build_vector_index(name: str, author_dir: Path):

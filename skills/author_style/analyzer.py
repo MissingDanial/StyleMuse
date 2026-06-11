@@ -11,6 +11,7 @@ from typing import List, Dict, Any
 
 from langchain_core.documents import Document
 from .logger import get_logger
+from .llm_logger import extract_response_text, invoke_with_logging
 
 log = get_logger(__name__)
 
@@ -213,18 +214,18 @@ def analyze_author(
 
         from langchain_core.messages import HumanMessage
 
-        response = llm.invoke([HumanMessage(content=prompt)])
-        content = response.content
-
-        # 处理可能的列表响应
-        if isinstance(content, list):
-            text_parts = []
-            for block in content:
-                if hasattr(block, "type") and block.type == "text":
-                    text_parts.append(block.text)
-                elif isinstance(block, dict) and block.get("type") == "text":
-                    text_parts.append(block.get("text", ""))
-            content = "\n".join(text_parts)
+        response = invoke_with_logging(
+            llm,
+            [HumanMessage(content=prompt)],
+            step="author_analysis",
+            logger=log,
+            metadata={
+                "author": author_name,
+                "sample_count": len(samples),
+                "document_count": len(documents),
+            },
+        )
+        content = extract_response_text(response.content)
 
         style_guide, few_shot = parse_analysis_result(content)
         log.info(f"  风格分析完成: style_guide {len(style_guide)} 字, few_shot {len(few_shot)} 字")

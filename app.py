@@ -13,6 +13,7 @@ import sys
 import json
 import subprocess
 import traceback
+from datetime import datetime, timezone
 from pathlib import Path
 
 project_root = Path(__file__).parent
@@ -174,6 +175,19 @@ def api_write():
         # 保存到指定位置
         filename = _save_article(author, topic, article, data.get("save_dir", ""))
         saved_path = str(filename)
+        review_path = _save_review(filename, skill.last_review_result)
+        version_path = _save_version_metadata(
+            filename,
+            kind="draft",
+            author=author,
+            topic=topic,
+            article=article,
+            review=skill.last_review_result,
+            plagiarism=skill.last_plagiarism_result,
+            parent_version=data.get("parent_version", ""),
+            request_options=_request_generation_options(data),
+        )
+        version = _load_json_file(version_path)
 
         return jsonify({
             "ok": True,
@@ -182,7 +196,11 @@ def api_write():
                 "topic": topic,
                 "author": author,
                 "saved_path": saved_path,
+                "review_path": str(review_path) if review_path else "",
+                "version_path": str(version_path),
+                "version": version,
                 "plagiarism": skill.last_plagiarism_result,
+                "review": skill.last_review_result,
             },
         })
 
@@ -241,8 +259,21 @@ def api_write_stream():
                 article = "".join(article_chunks)
                 filename = _save_article(author, topic, article, save_dir)
                 saved_path = str(filename)
+                review_path = _save_review(filename, skill.last_review_result)
+                version_path = _save_version_metadata(
+                    filename,
+                    kind="draft",
+                    author=author,
+                    topic=topic,
+                    article=article,
+                    review=skill.last_review_result,
+                    plagiarism=skill.last_plagiarism_result,
+                    parent_version=data.get("parent_version", ""),
+                    request_options=_request_generation_options(data),
+                )
+                version = _load_json_file(version_path)
 
-                yield f"data: {json.dumps({'type': 'done', 'article': article, 'topic': topic, 'author': author, 'saved_path': saved_path, 'plagiarism': skill.last_plagiarism_result}, ensure_ascii=False)}\n\n"
+                yield f"data: {json.dumps({'type': 'done', 'article': article, 'topic': topic, 'author': author, 'saved_path': saved_path, 'review_path': str(review_path) if review_path else '', 'version_path': str(version_path), 'version': version, 'plagiarism': skill.last_plagiarism_result, 'review': skill.last_review_result}, ensure_ascii=False)}\n\n"
             except Exception as e:
                 traceback.print_exc()
                 yield f"data: {json.dumps({'type': 'error', 'error': str(e)}, ensure_ascii=False)}\n\n"
@@ -256,6 +287,85 @@ def api_write_stream():
             },
         )
 
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/rewrite", methods=["POST"])
+def api_rewrite():
+    """Rewrite an article using the latest review feedback."""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"ok": False, "error": "缺少请求数据"}), 400
+
+        author = data.get("author", "").strip()
+        topic = data.get("topic", "").strip()
+        article = data.get("article", "").strip()
+        review = data.get("review") or {}
+        if not author:
+            return jsonify({"ok": False, "error": "请选择作家"}), 400
+        if not topic:
+            return jsonify({"ok": False, "error": "请输入写作主题"}), 400
+        if not article:
+            return jsonify({"ok": False, "error": "缺少待重写文章"}), 400
+        if not isinstance(review, dict):
+            return jsonify({"ok": False, "error": "review must be an object"}), 400
+
+        kwargs = {}
+        if data.get("model"):
+            kwargs["model"] = data["model"]
+        if data.get("temperature") is not None:
+            kwargs["temperature"] = float(data["temperature"])
+        if data.get("max_tokens"):
+            kwargs["max_tokens"] = int(data["max_tokens"])
+
+        skill = AuthorStyleSkill(author, **kwargs)
+        rewritten = skill.rewrite(
+            original_article=article,
+            review=review,
+            topic=topic,
+            tone=data.get("tone", "default"),
+            length=data.get("length", "medium"),
+            include_retrieval=data.get("include_retrieval", True),
+        )
+
+        filename = _save_article(author, f"{topic}_rewrite", rewritten, data.get("save_dir", ""))
+        saved_path = str(filename)
+        review_path = _save_review(filename, skill.last_review_result)
+        version_path = _save_version_metadata(
+            filename,
+            kind="rewrite",
+            author=author,
+            topic=topic,
+            article=rewritten,
+            review=skill.last_review_result,
+            plagiarism=skill.last_plagiarism_result,
+            parent_version=data.get("parent_version", ""),
+            request_options=_request_generation_options(data),
+        )
+        version = _load_json_file(version_path)
+
+        return jsonify({
+            "ok": True,
+            "data": {
+                "article": rewritten,
+                "topic": topic,
+                "author": author,
+                "saved_path": saved_path,
+                "review_path": str(review_path) if review_path else "",
+                "version_path": str(version_path),
+                "version": version,
+                "plagiarism": skill.last_plagiarism_result,
+                "review": skill.last_review_result,
+            },
+        })
+
+    except FileNotFoundError as e:
+        return jsonify({"ok": False, "error": str(e)}), 404
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
     except Exception as e:
         traceback.print_exc()
         return jsonify({"ok": False, "error": str(e)}), 500
@@ -520,6 +630,100 @@ def _save_article(author: str, topic: str, article: str, save_dir: str = "") -> 
     filename = unique_path(target_dir, safe_filename(topic, default="article", suffix=".txt"))
     filename.write_text(article, encoding="utf-8")
     return filename
+
+
+def _save_review(article_path: Path, review: dict) -> Path | None:
+    """Save the structured review report next to a generated article."""
+    if not review:
+        return None
+    path = Path(article_path)
+    review_path = path.with_suffix(".review.json")
+    review_path.write_text(json.dumps(review, ensure_ascii=False, indent=2), encoding="utf-8")
+    return review_path
+
+
+def _save_version_metadata(
+    article_path: Path,
+    *,
+    kind: str,
+    author: str,
+    topic: str,
+    article: str,
+    review: dict | None,
+    plagiarism: dict | None,
+    parent_version: str = "",
+    request_options: dict | None = None,
+) -> Path:
+    """Save version-chain metadata next to a generated article."""
+    path = Path(article_path)
+    review_path = path.with_suffix(".review.json") if review else None
+    version_path = path.with_suffix(".version.json")
+    metadata = {
+        "version_id": path.stem,
+        "kind": kind,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "author": author,
+        "topic": topic,
+        "article_path": str(path),
+        "review_path": str(review_path) if review_path else "",
+        "parent_version": str(parent_version or ""),
+        "article_chars": len(article or ""),
+        "request": request_options or {},
+        "review_summary": _summarize_review(review),
+        "plagiarism_summary": _summarize_plagiarism(plagiarism),
+    }
+    version_path.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
+    return version_path
+
+
+def _request_generation_options(data: dict) -> dict:
+    """Return non-secret generation options suitable for version metadata."""
+    return {
+        "tone": data.get("tone", "default"),
+        "length": data.get("length", "medium"),
+        "include_retrieval": data.get("include_retrieval", True),
+        "model": data.get("model", ""),
+        "temperature": data.get("temperature", None),
+        "max_tokens": data.get("max_tokens", None),
+    }
+
+
+def _summarize_review(review: dict | None) -> dict:
+    if not review:
+        return {}
+    requirement = review.get("requirement") or {}
+    style = review.get("style") or {}
+    plagiarism = review.get("plagiarism") or {}
+    return {
+        "decision": review.get("decision"),
+        "passed": review.get("passed"),
+        "score": review.get("score"),
+        "requirement_score": requirement.get("score"),
+        "style_score": style.get("score"),
+        "plagiarism_score": plagiarism.get("score"),
+        "plagiarism_risk": plagiarism.get("risk"),
+        "suggestion_count": len(review.get("suggestions") or []),
+    }
+
+
+def _summarize_plagiarism(plagiarism: dict | None) -> dict:
+    if not plagiarism:
+        return {}
+    return {
+        "passed": plagiarism.get("passed"),
+        "max_common": plagiarism.get("max_common"),
+        "similar_doc_count": len(plagiarism.get("similar_docs") or []),
+        "warning": plagiarism.get("warning", ""),
+    }
+
+
+def _load_json_file(path: Path | None) -> dict:
+    if not path:
+        return {}
+    try:
+        return json.loads(Path(path).read_text(encoding="utf-8"))
+    except Exception:
+        return {}
 
 
 if __name__ == "__main__":

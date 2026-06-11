@@ -96,6 +96,7 @@
                         <h3>生成结果</h3>
                         <div class="result-actions">
                             <span id="write-saved-path" class="saved-path"></span>
+                            <button class="btn btn-small" id="btn-rewrite" onclick="handleRewrite()" disabled>按审稿意见重写</button>
                             <button class="btn btn-small" onclick="downloadArticle()">下载</button>
                             <button class="btn btn-small" onclick="copyArticle()">复制</button>
                         </div>
@@ -104,7 +105,9 @@
                         <div class="spinner"></div>
                         <span>正在生成，请稍候...</span>
                     </div>
+                    <div id="write-versions" class="version-panel hidden"></div>
                     <div id="write-check" class="quality-strip hidden"></div>
+                    <div id="write-review" class="review-panel hidden"></div>
                     <div id="write-output" class="article-content"></div>
                 </div>
                 </section>

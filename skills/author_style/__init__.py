@@ -10,6 +10,7 @@ from .analyzer import analyze_author
 from .loader import load_all_chunks
 from .style_prompt import build_system_prompt, build_user_prompt
 from .plagiarism import check_plagiarism
+from .reviewer import review_article
 
 __all__ = [
     # 核心 Skill
@@ -23,6 +24,7 @@ __all__ = [
     "analyze_author",
     # 抄袭检测
     "check_plagiarism",
+    "review_article",
     # 工具函数
     "extract_text_from_response",
     "load_all_chunks",

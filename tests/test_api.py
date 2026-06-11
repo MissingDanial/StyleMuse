@@ -117,6 +117,89 @@ class TestApiDeleteAuthor:
         assert resp.get_json()["ok"] is False
 
 
+class TestApiWrite:
+    """Tests for POST /api/write."""
+
+    def test_returns_review_result(self, client):
+        class FakeSkill:
+            last_plagiarism_result = {"passed": True}
+            last_review_result = {"decision": "pass", "score": 90}
+
+            def __init__(self, author, **kwargs):
+                self.author = author
+
+            def write(self, **kwargs):
+                return "generated article"
+
+        with patch("app.AuthorStyleSkill", FakeSkill), \
+             patch("app._save_article", return_value="authors/test/output/article.txt"), \
+             patch("app._save_review", return_value="authors/test/output/article.review.json"), \
+             patch("app._save_version_metadata", return_value="authors/test/output/article.version.json"), \
+             patch("app._load_json_file", return_value={"version_id": "article", "kind": "draft"}):
+            resp = client.post(
+                "/api/write",
+                data=json.dumps({"author": "test", "topic": "topic"}),
+                content_type="application/json",
+            )
+
+        assert resp.status_code == 200
+        data = resp.get_json()["data"]
+        assert data["article"] == "generated article"
+        assert data["review"] == {"decision": "pass", "score": 90}
+        assert data["review_path"] == "authors/test/output/article.review.json"
+        assert data["version_path"] == "authors/test/output/article.version.json"
+        assert data["version"] == {"version_id": "article", "kind": "draft"}
+
+    def test_rewrite_returns_updated_review_result(self, client):
+        class FakeSkill:
+            last_plagiarism_result = {"passed": True}
+            last_review_result = {"decision": "warn", "score": 78}
+
+            def __init__(self, author, **kwargs):
+                self.author = author
+
+            def rewrite(self, **kwargs):
+                assert kwargs["original_article"] == "old article"
+                assert kwargs["review"] == {"decision": "warn"}
+                return "rewritten article"
+
+        with patch("app.AuthorStyleSkill", FakeSkill), \
+             patch("app._save_article", return_value="authors/test/output/topic_rewrite.txt"), \
+             patch("app._save_review", return_value="authors/test/output/topic_rewrite.review.json"), \
+             patch("app._save_version_metadata", return_value="authors/test/output/topic_rewrite.version.json") as save_version, \
+             patch("app._load_json_file", return_value={"version_id": "topic_rewrite", "kind": "rewrite"}):
+            resp = client.post(
+                "/api/rewrite",
+                data=json.dumps({
+                    "author": "test",
+                    "topic": "topic",
+                    "article": "old article",
+                    "review": {"decision": "warn"},
+                    "parent_version": "topic",
+                }),
+                content_type="application/json",
+            )
+
+        assert resp.status_code == 200
+        data = resp.get_json()["data"]
+        assert data["article"] == "rewritten article"
+        assert data["review"] == {"decision": "warn", "score": 78}
+        assert data["review_path"] == "authors/test/output/topic_rewrite.review.json"
+        assert data["version_path"] == "authors/test/output/topic_rewrite.version.json"
+        assert data["version"] == {"version_id": "topic_rewrite", "kind": "rewrite"}
+        assert save_version.call_args.kwargs["parent_version"] == "topic"
+
+    def test_rewrite_rejects_missing_article(self, client):
+        resp = client.post(
+            "/api/rewrite",
+            data=json.dumps({"author": "test", "topic": "topic", "review": {}}),
+            content_type="application/json",
+        )
+
+        assert resp.status_code == 400
+        assert resp.get_json()["ok"] is False
+
+
 # ---------------------------------------------------------------------------
 # GET /api/config
 # ---------------------------------------------------------------------------
@@ -288,6 +371,60 @@ class TestSaveArticle:
         assert second.name == "same topic_2.txt"
         assert first.read_text(encoding="utf-8") == "first"
         assert second.read_text(encoding="utf-8") == "second"
+
+    def test_save_review_writes_json_next_to_article(self, tmp_path):
+        import app as app_module
+
+        article_path = tmp_path / "article.txt"
+        article_path.write_text("content", encoding="utf-8")
+
+        review_path = app_module._save_review(article_path, {"decision": "pass", "score": 91})
+
+        assert review_path == tmp_path / "article.review.json"
+        saved = json.loads(review_path.read_text(encoding="utf-8"))
+        assert saved == {"decision": "pass", "score": 91}
+
+    def test_save_review_skips_empty_review(self, tmp_path):
+        import app as app_module
+
+        assert app_module._save_review(tmp_path / "article.txt", None) is None
+
+    def test_save_version_metadata_writes_chain_summary(self, tmp_path):
+        import app as app_module
+
+        article_path = tmp_path / "article_2.txt"
+        article_path.write_text("content", encoding="utf-8")
+        review = {
+            "decision": "warn",
+            "passed": False,
+            "score": 76,
+            "requirement": {"score": 82},
+            "style": {"score": 70},
+            "plagiarism": {"score": 88, "risk": "low"},
+            "suggestions": ["revise"],
+        }
+        plagiarism = {"passed": True, "max_common": 5, "similar_docs": []}
+
+        version_path = app_module._save_version_metadata(
+            article_path,
+            kind="rewrite",
+            author="author",
+            topic="topic",
+            article="content",
+            review=review,
+            plagiarism=plagiarism,
+            parent_version="article",
+            request_options={"tone": "default"},
+        )
+
+        saved = json.loads(version_path.read_text(encoding="utf-8"))
+        assert version_path == tmp_path / "article_2.version.json"
+        assert saved["kind"] == "rewrite"
+        assert saved["parent_version"] == "article"
+        assert saved["review_summary"]["decision"] == "warn"
+        assert saved["review_summary"]["style_score"] == 70
+        assert saved["plagiarism_summary"]["max_common"] == 5
+        assert saved["request"] == {"tone": "default"}
 
 
 # ---------------------------------------------------------------------------

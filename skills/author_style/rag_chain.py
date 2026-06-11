@@ -5,6 +5,7 @@
 支持所有兼容 OpenAI API 的大模型。
 """
 
+import json
 import random
 from pathlib import Path
 from typing import List, Dict, Iterator
@@ -21,7 +22,9 @@ from .config import (
 from .loader import load_all_chunks
 from .style_prompt import build_system_prompt, build_user_prompt
 from .logger import get_logger
+from .llm_logger import invoke_with_logging, stream_with_logging
 from .plagiarism import check_plagiarism
+from .reviewer import review_article
 
 log = get_logger(__name__)
 
@@ -188,6 +191,7 @@ class AuthorStyleSkill:
         self._vector_store = None
         self._embeddings = None
         self.last_plagiarism_result = None
+        self.last_review_result = None
 
     def _load_style_guide(self) -> str:
         """加载风格指南"""
@@ -297,9 +301,24 @@ class AuthorStyleSkill:
             HumanMessage(content=user_prompt),
         ]
 
-        response = self.llm.invoke(messages)
+        response = invoke_with_logging(
+            self.llm,
+            messages,
+            step="write",
+            logger=log,
+            metadata={
+                "author": self.author_name,
+                "topic": topic,
+                "tone": tone,
+                "length": length,
+                "include_retrieval": include_retrieval,
+                "retrieved_context_chars": len(retrieved_context),
+                "llm_provider": self.config.get("llm_provider"),
+                "llm_model": self.config.get("llm_model"),
+            },
+        )
         article = extract_text_from_response(response.content)
-        self.last_plagiarism_result = self._check_plagiarism(article)
+        self._run_post_generation_checks(article, topic, tone, length)
         return article
 
     def write_stream(
@@ -367,23 +386,143 @@ class AuthorStyleSkill:
         ]
 
         article_chunks = []
-        for chunk in self.llm.stream(messages):
+        for chunk in stream_with_logging(
+            self.llm,
+            messages,
+            step="write_stream",
+            logger=log,
+            metadata={
+                "author": self.author_name,
+                "topic": topic,
+                "tone": tone,
+                "length": length,
+                "include_retrieval": include_retrieval,
+                "retrieved_context_chars": len(retrieved_context),
+                "llm_provider": self.config.get("llm_provider"),
+                "llm_model": self.config.get("llm_model"),
+            },
+        ):
             text = extract_text_from_response(chunk.content)
             if text:
                 article_chunks.append(text)
                 yield text
-        self.last_plagiarism_result = self._check_plagiarism("".join(article_chunks))
+        self._run_post_generation_checks("".join(article_chunks), topic, tone, length)
 
-    def _check_plagiarism(self, article: str) -> dict:
+    def rewrite(
+        self,
+        original_article: str,
+        review: dict,
+        topic: str,
+        tone: str = "default",
+        length: str = "medium",
+        include_retrieval: bool = True,
+    ) -> str:
+        """Rewrite an article using review feedback while preserving author style."""
+        tone_options = self.config.get("tone_options", {})
+        length_options = self.config.get("length_options", {})
+        tone_value = tone_options.get(tone, tone_options.get("default", tone))
+        length_value = length_options.get(length, length_options.get("medium", length))
+
+        retrieved_context = ""
+        if include_retrieval:
+            try:
+                vector_store = self._get_vector_store()
+                if vector_store:
+                    retrieved_context = retrieve_relevant_context(
+                        topic,
+                        vector_store,
+                        top_k=self.config["retrieval_top_k"],
+                        similarity_threshold=self.config["similarity_threshold"],
+                        retrieval_multiplier=self.config["retrieval_multiplier"],
+                    )
+            except Exception as e:
+                log.error(f"检索失败: {e}")
+
+        system_prompt = build_system_prompt(
+            topic=topic,
+            style_guide=self.style_guide,
+            retrieved_context=retrieved_context,
+            tone=tone_value,
+            length=length_value,
+        )
+
+        review_json = json.dumps(review or {}, ensure_ascii=False, indent=2)
+        user_prompt = f"""请根据审稿 Agent 的意见重写下面这篇文章。
+
+要求：
+1. 保持主题：{topic}
+2. 保持语气：{tone_value}
+3. 目标长度：{length_value}
+4. 修正审稿意见指出的问题。
+5. 避免照抄原文或作家语料中的连续句子。
+6. 只输出重写后的正文，不要解释。
+
+审稿意见：
+{review_json[:4000]}
+
+原文：
+{original_article}
+"""
+
+        from langchain_core.messages import HumanMessage, SystemMessage
+
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=user_prompt),
+        ]
+        response = invoke_with_logging(
+            self.llm,
+            messages,
+            step="rewrite",
+            logger=log,
+            metadata={
+                "author": self.author_name,
+                "topic": topic,
+                "tone": tone,
+                "length": length,
+                "include_retrieval": include_retrieval,
+                "retrieved_context_chars": len(retrieved_context),
+                "original_article_chars": len(original_article or ""),
+                "review_decision": (review or {}).get("decision"),
+                "review_score": (review or {}).get("score"),
+                "llm_provider": self.config.get("llm_provider"),
+                "llm_model": self.config.get("llm_model"),
+            },
+        )
+        article = extract_text_from_response(response.content)
+        self._run_post_generation_checks(article, topic, tone, length)
+        return article
+
+    def _load_source_documents(self) -> List[Document]:
+        """Load author chunks once for post-generation checks."""
+        return load_all_chunks(
+            self.author_dir,
+            chunk_size=self.config["chunk_size"],
+            chunk_overlap=self.config["chunk_overlap"],
+        )
+
+    def _run_post_generation_checks(self, article: str, topic: str, tone: str, length: str):
+        """Run plagiarism and review checks after generation."""
+        try:
+            source_documents = self._load_source_documents()
+        except Exception as e:
+            log.error(f"post-generation source loading failed: {e}")
+            source_documents = []
+        self.last_plagiarism_result = self._check_plagiarism(article, source_documents)
+        self.last_review_result = self._review_article(
+            article=article,
+            topic=topic,
+            tone=tone,
+            length=length,
+            source_documents=source_documents,
+        )
+
+    def _check_plagiarism(self, article: str, source_documents: List[Document] = None) -> dict:
         """Run best-effort duplicate-text detection against author chunks."""
         if not self.config.get("plagiarism_check_enabled", True):
             return None
         try:
-            source_documents = load_all_chunks(
-                self.author_dir,
-                chunk_size=self.config["chunk_size"],
-                chunk_overlap=self.config["chunk_overlap"],
-            )
+            source_documents = source_documents if source_documents is not None else self._load_source_documents()
             result = check_plagiarism(
                 generated=article,
                 source_documents=source_documents,
@@ -396,6 +535,35 @@ class AuthorStyleSkill:
         except Exception as e:
             log.error(f"重复检测失败: {e}")
             return {"passed": None, "warning": f"重复检测失败: {e}"}
+
+    def _review_article(
+        self,
+        article: str,
+        topic: str,
+        tone: str,
+        length: str,
+        source_documents: List[Document],
+    ) -> dict:
+        """Run the independent review agent after generation."""
+        if not self.config.get("review_agent_enabled", True):
+            return None
+        try:
+            return review_article(
+                author_name=self.author_name,
+                topic=topic,
+                tone=tone,
+                length=length,
+                article=article,
+                source_documents=source_documents,
+                style_guide=self.style_guide,
+                few_shot=self.few_shot,
+                plagiarism_result=self.last_plagiarism_result,
+                config=self.config,
+                llm=self.llm,
+            )
+        except Exception as e:
+            log.error(f"review agent failed: {e}")
+            return {"passed": None, "decision": "unknown", "warning": f"review agent failed: {e}"}
 
     def write_batch(self, topics: List[str], **kwargs) -> Dict[str, str]:
         """

@@ -3,10 +3,12 @@
 """
 
 import logging
+import os
 import sys
+import tempfile
 from pathlib import Path
 
-LOG_DIR = Path(__file__).parent.parent.parent / "logs"
+LOG_DIR = Path(os.getenv("STYLEMUSE_LOG_DIR", Path(__file__).parent.parent.parent / "logs"))
 LOG_DIR.mkdir(exist_ok=True)
 
 
@@ -35,17 +37,28 @@ def get_logger(name: str) -> logging.Logger:
         datefmt="%H:%M:%S",
     ))
 
-    # 文件 handler
-    file_handler = logging.FileHandler(
-        LOG_DIR / "stylemuse.log", encoding="utf-8"
-    )
+    logger.addHandler(console)
+
+    # 文件 handler。日志不可写不应阻断 Web 服务启动。
+    file_handler = _make_file_handler(LOG_DIR / "stylemuse.log")
+    if file_handler is None:
+        fallback_dir = Path(tempfile.gettempdir()) / "stylemuse_logs"
+        fallback_dir.mkdir(exist_ok=True)
+        file_handler = _make_file_handler(fallback_dir / "stylemuse.log")
+    if file_handler is not None:
+        logger.addHandler(file_handler)
+
+    return logger
+
+
+def _make_file_handler(path: Path):
+    try:
+        file_handler = logging.FileHandler(path, encoding="utf-8")
+    except OSError:
+        return None
     file_handler.setLevel(logging.DEBUG)
     file_handler.setFormatter(logging.Formatter(
         "%(asctime)s [%(levelname)-7s] %(name)s - %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     ))
-
-    logger.addHandler(console)
-    logger.addHandler(file_handler)
-
-    return logger
+    return file_handler

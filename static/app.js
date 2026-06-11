@@ -148,6 +148,10 @@ async function handleDelete(name) {
 
 let lastArticle = "";
 let lastTopic = "";
+let lastAuthor = "";
+let lastReview = null;
+let lastVersion = null;
+let versionHistory = [];
 
 async function loadAuthorSelect() {
     try {
@@ -168,8 +172,17 @@ async function handleWrite() {
     $("write-result").classList.remove("hidden");
     $("write-loading").classList.remove("hidden");
     $("write-check").classList.add("hidden");
+    $("write-review").classList.add("hidden");
+    $("write-versions").classList.add("hidden");
     $("write-output").textContent = "";
     $("write-saved-path").textContent = "";
+    setRewriteEnabled(false);
+    lastArticle = "";
+    lastTopic = "";
+    lastAuthor = "";
+    lastReview = null;
+    lastVersion = null;
+    versionHistory = [];
 
     const btn = $("btn-write");
     btn.disabled = true; btn.textContent = "生成中...";
@@ -195,13 +208,19 @@ async function handleWrite() {
             const data = await api("/api/write", { method: "POST", body: JSON.stringify(payload) });
             lastArticle = data.article;
             lastTopic = data.topic;
+            lastAuthor = data.author;
+            lastReview = data.review || null;
+            addVersion(data.version, data.version_path);
             $("write-output").textContent = data.article;
             $("write-saved-path").textContent = data.saved_path ? `已保存: ${data.saved_path}` : "";
             renderPlagiarismResult(data.plagiarism);
+            renderReviewResult(data.review);
+            setRewriteEnabled(Boolean(lastArticle && lastReview));
             showToast("生成完成", "success");
         } catch (e) {
             $("write-output").textContent = "生成失败: " + e.message;
             $("write-check").classList.add("hidden");
+            $("write-review").classList.add("hidden");
             showToast("生成失败", "error");
         }
     }
@@ -256,9 +275,14 @@ async function handleWriteStream(payload) {
             } else if (event.type === "done") {
                 lastArticle = event.article;
                 lastTopic = event.topic;
+                lastAuthor = event.author;
+                lastReview = event.review || null;
+                addVersion(event.version, event.version_path);
                 $("write-output").textContent = event.article;
                 $("write-saved-path").textContent = event.saved_path ? `已保存: ${event.saved_path}` : "";
                 renderPlagiarismResult(event.plagiarism);
+                renderReviewResult(event.review);
+                setRewriteEnabled(Boolean(lastArticle && lastReview));
                 showToast("生成完成", "success");
                 succeeded = true;
             } else if (event.type === "error") {
@@ -298,6 +322,172 @@ function renderPlagiarismResult(result) {
         <strong>${escapeHtml(title)}</strong>
         <span>${escapeHtml(maxCommon)}</span>
         <span>${escapeHtml(warning)}</span>
+    `;
+}
+
+function renderReviewResult(result) {
+    const el = $("write-review");
+    if (!el) return;
+    if (!result) {
+        el.classList.add("hidden");
+        return;
+    }
+
+    const decision = result.decision || "unknown";
+    const stateClass = decision === "fail" ? "warning" : decision === "pass" ? "ok" : "neutral";
+    const requirement = result.requirement || {};
+    const style = result.style || {};
+    const plagiarism = result.plagiarism || {};
+    const suggestions = Array.isArray(result.suggestions) ? result.suggestions : [];
+    const matched = Array.isArray(style.matched) ? style.matched : [];
+    const missing = Array.isArray(style.missing) ? style.missing : [];
+
+    el.className = `review-panel ${stateClass}`;
+    el.innerHTML = `
+        <div class="review-head">
+            <strong>审稿 Agent</strong>
+            <span>结论: ${escapeHtml(decision)}</span>
+            <span>总分: ${Number(result.score) || 0}</span>
+        </div>
+        <div class="review-grid">
+            <div>
+                <b>要求符合度</b>
+                <span>${Number(requirement.score) || 0}</span>
+                ${renderIssueList(requirement.issues)}
+            </div>
+            <div>
+                <b>风格相似度</b>
+                <span>${Number(style.score) || 0}</span>
+                ${renderIssueList([...matched, ...missing])}
+            </div>
+            <div>
+                <b>抄袭风险</b>
+                <span>${escapeHtml(plagiarism.risk || "unknown")}</span>
+                ${renderIssueList(plagiarism.issues)}
+            </div>
+        </div>
+        <div class="review-suggestions">
+            <b>修改建议</b>
+            ${renderIssueList(suggestions)}
+        </div>
+    `;
+}
+
+function renderIssueList(items) {
+    const list = Array.isArray(items) ? items.filter(Boolean).slice(0, 5) : [];
+    if (!list.length) return '<p class="muted">暂无明显问题</p>';
+    return `<ul>${list.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
+}
+
+function setRewriteEnabled(enabled) {
+    const btn = $("btn-rewrite");
+    if (btn) btn.disabled = !enabled;
+}
+
+async function handleRewrite() {
+    if (!lastArticle || !lastReview) {
+        showToast("暂无可重写的审稿结果", "error");
+        return;
+    }
+
+    const payload = {
+        author: lastAuthor || $("write-author").value,
+        topic: lastTopic || $("write-topic").value.trim(),
+        article: lastArticle,
+        review: lastReview,
+        parent_version: lastVersion?.version_id || lastVersion?.version_path || "",
+        tone: $("write-tone").value,
+        length: $("write-length").value,
+        include_retrieval: $("write-retrieval").checked,
+        save_dir: $("write-save-dir").value.trim(),
+    };
+
+    const btn = $("btn-rewrite");
+    btn.disabled = true;
+    $("write-loading").classList.remove("hidden");
+
+    try {
+        const data = await api("/api/rewrite", {
+            method: "POST",
+            body: JSON.stringify(payload),
+        });
+        lastArticle = data.article;
+        lastTopic = data.topic;
+        lastAuthor = data.author;
+        lastReview = data.review || null;
+        addVersion(data.version, data.version_path);
+        $("write-output").textContent = data.article;
+        $("write-saved-path").textContent = data.saved_path ? `已保存: ${data.saved_path}` : "";
+        renderPlagiarismResult(data.plagiarism);
+        renderReviewResult(data.review);
+        showToast("重写完成", "success");
+    } catch (e) {
+        showToast("重写失败: " + e.message, "error");
+    } finally {
+        $("write-loading").classList.add("hidden");
+        setRewriteEnabled(Boolean(lastArticle && lastReview));
+    }
+}
+
+function addVersion(version, versionPath) {
+    if (!version) {
+        renderVersionHistory();
+        return;
+    }
+    const normalized = {
+        ...version,
+        version_path: versionPath || version.version_path || "",
+    };
+    lastVersion = normalized;
+    versionHistory.push(normalized);
+    renderVersionHistory();
+}
+
+function renderVersionHistory() {
+    const el = $("write-versions");
+    if (!el) return;
+    if (!versionHistory.length) {
+        el.classList.add("hidden");
+        el.innerHTML = "";
+        return;
+    }
+
+    el.className = "version-panel";
+    el.innerHTML = `
+        <div class="version-head">
+            <strong>作品版本链</strong>
+            <span>${versionHistory.length} 个版本</span>
+        </div>
+        <div class="version-list">
+            ${versionHistory.map((item, index) => renderVersionItem(item, index)).join("")}
+        </div>
+    `;
+}
+
+function renderVersionItem(item, index) {
+    const summary = item.review_summary || {};
+    const previous = index > 0 ? versionHistory[index - 1]?.review_summary || {} : {};
+    const score = Number(summary.score);
+    const previousScore = Number(previous.score);
+    const hasScore = Number.isFinite(score);
+    const delta = hasScore && Number.isFinite(previousScore) ? score - previousScore : null;
+    const deltaText = delta === null ? "" : `${delta >= 0 ? "+" : ""}${delta}`;
+    const kind = item.kind === "rewrite" ? "重写稿" : "初稿";
+    const decision = summary.decision || "unknown";
+    const risk = summary.plagiarism_risk
+        || (item.plagiarism_summary?.passed === false ? "high" : "unknown");
+
+    return `
+        <div class="version-item ${index === versionHistory.length - 1 ? "active" : ""}">
+            <div>
+                <b>v${index + 1} · ${escapeHtml(kind)}</b>
+                <span>${escapeHtml(decision)} · ${hasScore ? score : "-"}${deltaText ? ` (${escapeHtml(deltaText)})` : ""}</span>
+            </div>
+            <div>
+                <span>${Number(item.article_chars) || 0} 字</span>
+                <span>抄袭风险: ${escapeHtml(risk)}</span>
+            </div>
+        </div>
     `;
 }
 
