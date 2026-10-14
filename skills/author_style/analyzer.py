@@ -201,7 +201,7 @@ def analyze_author(
         return {"style_guide": "", "few_shot": "", "stats": {}}
 
     # 基础统计
-    stats = extract_basic_stats(samples)
+    stats = extract_basic_stats([doc.page_content for doc in documents])
     log.info(f"  基础统计: {stats['sentence_count']} 句, 平均句长 {stats['avg_sentence_len']} 字")
 
     style_guide = ""

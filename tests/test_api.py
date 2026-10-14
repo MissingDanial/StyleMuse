@@ -29,7 +29,9 @@ def app_instance(tmp_path):
     authors_dir.mkdir(parents=True, exist_ok=True)
 
     with patch.object(app_module, "ENV_FILE", env_file), \
-         patch.object(app_module, "MODELS_FILE", models_file):
+         patch.object(app_module, "MODELS_FILE", models_file), \
+         patch.object(app_module, "project_root", tmp_path), \
+         patch.dict(app_module.app.config, {"ACCESS_TOKEN": ""}):
         app_module.app.config["TESTING"] = True
         yield app_module.app
 

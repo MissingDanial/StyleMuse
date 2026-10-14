@@ -1,0 +1,2 @@
+# Optional local browser QA; not required by the application runtime.
+playwright==1.63.0

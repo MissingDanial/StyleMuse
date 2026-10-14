@@ -61,7 +61,7 @@ def _env(name: str, default: str = None) -> Optional[str]:
 
 # provider: "openai" (兼容所有 OpenAI API 格式) 或 "anthropic"
 LLM_PROVIDER = _env("LLM_PROVIDER", "openai")
-LLM_MODEL = _env("LLM_MODEL", "deepseek-chat")
+LLM_MODEL = _env("LLM_MODEL", "deepseek-flash")
 LLM_BASE_URL = _env("LLM_BASE_URL")
 LLM_API_KEY = _env("LLM_API_KEY")
 
@@ -105,7 +105,7 @@ def get_group_id() -> Optional[str]:
 DEFAULTS = {
     # LLM
     "llm_provider": LLM_PROVIDER or "openai",
-    "llm_model": LLM_MODEL or "deepseek-chat",
+    "llm_model": LLM_MODEL or "deepseek-flash",
     "llm_base_url": LLM_BASE_URL or "",
     "llm_api_key": LLM_API_KEY or "",
 
@@ -113,6 +113,10 @@ DEFAULTS = {
     "embedding_provider": EMBEDDING_PROVIDER or "dashscope",
     "embedding_model": EMBEDDING_MODEL or "text-embedding-v3",
     "embedding_api_key": EMBEDDING_API_KEY or "",
+    "embedding_base_url": _env("EMBEDDING_BASE_URL", ""),
+    "embedding_cache_dir": _env("EMBEDDING_CACHE_DIR", ".stylemuse/models"),
+    "embedding_local_only": _env("EMBEDDING_LOCAL_ONLY", "1") == "1",
+    "embedding_query_instruction": _env("EMBEDDING_QUERY_INSTRUCTION", "为这个句子生成表示以用于检索相关文章："),
 
     # 分块
     "chunk_size": 100,
@@ -128,12 +132,19 @@ DEFAULTS = {
     "plagiarism_check_enabled": True,
     "max_common_len": 15,
     "plagiarism_similarity_threshold": 0.6,
+    "semantic_reuse_enabled": False,
+    "semantic_reuse_profile": "benchmarks/semantic_reuse/profile.json",
     "review_agent_enabled": True,
     "review_llm_enabled": False,
 
     # 生成
     "max_tokens": 2500,
     "temperature": 1.0,
+    "request_timeout": 90,
+    "max_retries": 2,
+    # DeepSeek defaults to thinking mode, which ignores temperature and shares
+    # the output budget with reasoning. Creative writing uses non-thinking mode.
+    "deepseek_thinking": "disabled",
 
     # tone / length 选项
     "tone_options": {
@@ -153,7 +164,8 @@ DEFAULTS = {
 
 def get_author_dir(name: str) -> Path:
     """获取作家工作空间目录"""
-    return AUTHORS_DIR / validate_simple_name(name, "作家名称")
+    from .safety import resolve_under_base
+    return resolve_under_base(AUTHORS_DIR, AUTHORS_DIR / validate_simple_name(name, "作家名称"), "作家目录")
 
 
 def load_author_config(name: str) -> dict:
@@ -184,8 +196,8 @@ def load_author_config(name: str) -> dict:
 def save_author_config(name: str, config: dict):
     """保存作家配置到 config.json"""
     config_file = get_author_dir(name) / "config.json"
-    with open(config_file, "w", encoding="utf-8") as f:
-        json.dump(config, f, ensure_ascii=False, indent=2)
+    from .cache import atomic_write_json
+    atomic_write_json(config_file, config)
 
 
 def get_llm(config: dict = None):
@@ -204,7 +216,7 @@ def get_llm(config: dict = None):
     """
     cfg = config or DEFAULTS
     provider = cfg.get("llm_provider", "openai")
-    model = cfg.get("llm_model", "deepseek-chat")
+    model = cfg.get("llm_model", "deepseek-flash")
     base_url = cfg.get("llm_base_url", "")
     api_key = cfg.get("llm_api_key", "")
 
@@ -221,6 +233,8 @@ def get_llm(config: dict = None):
             "api_key": api_key,
             "max_tokens": cfg.get("max_tokens", 2500),
             "temperature": cfg.get("temperature", 1.0),
+            "timeout": cfg.get("request_timeout", 90),
+            "max_retries": cfg.get("max_retries", 2),
         }
         if base_url:
             kwargs["base_url"] = base_url
@@ -233,9 +247,18 @@ def get_llm(config: dict = None):
             "api_key": api_key,
             "max_tokens": cfg.get("max_tokens", 2500),
             "temperature": cfg.get("temperature", 1.0),
+            "timeout": cfg.get("request_timeout", 90),
+            "max_retries": cfg.get("max_retries", 2),
         }
         if base_url:
             kwargs["base_url"] = base_url
+        from urllib.parse import urlsplit
+        if urlsplit(base_url).hostname == "api.deepseek.com":
+            thinking = cfg.get("deepseek_thinking", "disabled")
+            if thinking not in {"enabled", "disabled"}:
+                raise ValueError("deepseek_thinking 必须为 enabled 或 disabled")
+            kwargs["extra_body"] = {"thinking": {"type": thinking}}
+            kwargs["stream_usage"] = True
         return ChatOpenAI(**kwargs)
 
 
@@ -253,6 +276,20 @@ def get_embeddings(config: dict = None):
     provider = cfg.get("embedding_provider", "dashscope")
     model = cfg.get("embedding_model", "text-embedding-v3")
     api_key = cfg.get("embedding_api_key", "")
+
+    if provider == "local":
+        from .local_embeddings import LocalEmbeddings, MODEL_NAME, QUERY_INSTRUCTION
+        cache_dir = Path(cfg.get("embedding_cache_dir") or ".stylemuse/models")
+        if not cache_dir.is_absolute():
+            cache_dir = PROJECT_ROOT / cache_dir
+        return LocalEmbeddings(model=cfg.get("embedding_model") or MODEL_NAME, cache_dir=cache_dir,
+                               threads=cfg.get("embedding_threads", 2), batch_size=cfg.get("embedding_batch_size", 32),
+                               query_instruction=cfg.get("embedding_query_instruction", QUERY_INSTRUCTION),
+                               local_files_only=cfg.get("embedding_local_only", True))
+
+    from urllib.parse import urlsplit
+    if urlsplit(cfg.get("embedding_base_url") or "").hostname == "api.deepseek.com":
+        raise ValueError("DeepSeek 官方未公开提供 Embedding 接口，请使用 local、DashScope 或其他嵌入服务")
 
     if not api_key:
         raise ValueError(

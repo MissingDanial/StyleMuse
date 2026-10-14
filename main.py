@@ -17,7 +17,8 @@ sys.path.insert(0, str(project_root))
 
 from skills.author_style import AuthorStyleSkill, create_author, list_authors, delete_author, get_author_info
 from skills.author_style.config import get_author_dir
-from skills.author_style.safety import safe_filename, unique_path
+from skills.author_style.safety import safe_filename, write_unique_text
+from skills.author_style.author_manager import restore_author
 
 
 def cmd_create(args):
@@ -59,9 +60,14 @@ def cmd_write(args):
         # 保存到作家目录
         output_dir = get_author_dir(args.author) / "output"
         output_dir.mkdir(parents=True, exist_ok=True)
-        filename = unique_path(output_dir, safe_filename(args.topic, default="article", suffix=".txt"))
-        with open(filename, "w", encoding="utf-8") as f:
-            f.write(article)
+        filename = write_unique_text(output_dir, safe_filename(args.topic, default="article", suffix=".txt"), article)
+        from skills.author_style.artifacts import save_review, save_version_metadata
+        save_review(filename, skill.last_review_result)
+        save_version_metadata(filename, kind="draft", author=args.author, topic=args.topic, article=article,
+                               review=skill.last_review_result, plagiarism=skill.last_plagiarism_result,
+                               request_options={"tone": args.tone, "length": args.length,
+                                   "include_retrieval": not args.no_retrieval, "model": skill.config["llm_model"],
+                                   "temperature": skill.config["temperature"]})
         print(f"文章已保存到: {filename}")
 
         print(article)
@@ -167,6 +173,8 @@ def main():
     # delete 子命令
     delete_parser = subparsers.add_parser("delete", help="删除作家")
     delete_parser.add_argument("--author", "-a", type=str, required=True, help="作家名称")
+    restore_parser = subparsers.add_parser("restore", help="从归档恢复作家")
+    restore_parser.add_argument("--archive-id", required=True, help="删除时输出的恢复编号")
 
     args = parser.parse_args()
 
@@ -180,6 +188,7 @@ def main():
         "list": cmd_list,
         "info": cmd_info,
         "delete": cmd_delete,
+        "restore": lambda args: print(f"已恢复: {restore_author(args.archive_id)}"),
     }
 
     commands[args.command](args)

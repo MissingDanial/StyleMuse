@@ -2,44 +2,55 @@
 通用作家风格仿写 Skill - EPUB 解析模块
 """
 
-import json
 import zipfile
-import warnings
 from pathlib import Path
 from typing import List
 from bs4 import BeautifulSoup
 
 from langchain_core.documents import Document
 from .logger import get_logger
+from .cache import CACHE_VERSION, file_manifest, read_cached_documents, write_cached_documents
 
 log = get_logger(__name__)
 
-warnings.filterwarnings("ignore")
+def _validate_archive(path: Path):
+    with zipfile.ZipFile(path) as archive:
+        entries = archive.infolist()
+        if len(entries) > 2000 or sum(entry.file_size for entry in entries) > 128 * 1024 * 1024:
+            raise ValueError("EPUB 解压内容超过限制（128 MB 或 2000 个条目）")
+
+
+def _chapter_text(content) -> str:
+    soup = BeautifulSoup(content, "html.parser")
+    for element in soup(["script", "style", "nav"]):
+        element.decompose()
+    body = soup.body or soup
+    paragraphs = body.find_all(["p", "h1", "h2", "h3", "h4", "li"])
+    return "\n\n".join(p.get_text("", strip=True) for p in paragraphs) if paragraphs else body.get_text(" ", strip=True)
 
 
 def parse_epub(epub_path: Path) -> List[Document]:
     """解析单个 epub 文件"""
     from ebooklib import epub
+    import ebooklib
 
+    _validate_archive(epub_path)
     book = epub.read_epub(str(epub_path))
 
     # 获取书名
-    title = None
-    for meta in book.metadata.get("DC", {}).get("title", []):
-        if meta.lang == "zh-cn" or not title:
-            title = str(meta.content) if hasattr(meta, "content") else str(meta)
-            break
-    if not title:
-        title = epub_path.stem
+    titles = book.get_metadata("DC", "title")
+    title = titles[0][0] if titles else epub_path.stem
 
     documents = []
     chapter_idx = 0
 
-    for item in book.get_items():
-        if item.get_type() == 9:  # XHTML/Document type
+    items = [book.get_item_with_id(item_id) for item_id, _ in book.spine]
+    if not items:
+        items = list(book.get_items())
+    for item in items:
+        if item is not None and item.get_type() == ebooklib.ITEM_DOCUMENT and not isinstance(item, epub.EpubNav):
             content = item.get_content()
-            soup = BeautifulSoup(content, "xml")
-            text = soup.get_text(separator=" ", strip=True)
+            text = _chapter_text(content)
 
             if len(text) < 50:
                 continue
@@ -50,6 +61,7 @@ def parse_epub(epub_path: Path) -> List[Document]:
                 metadata={
                     "source": "epub",
                     "book_title": title,
+                    "title": title,
                     "chapter": chapter_idx,
                     "epub_file": epub_path.name,
                 },
@@ -62,16 +74,16 @@ def parse_epub(epub_path: Path) -> List[Document]:
 def parse_epub_from_zip(epub_path: Path) -> List[Document]:
     """从 zip 直接解析 epub（备用方法）"""
     title = epub_path.stem
+    _validate_archive(epub_path)
     documents = []
     chapter_idx = 0
 
     with zipfile.ZipFile(epub_path, "r") as z:
-        for name in z.namelist():
-            if name.endswith(".xhtml") and ("Text/" in name or "text/" in name):
+        for name in sorted(z.namelist()):
+            if Path(name).suffix.lower() in {".xhtml", ".html", ".htm"}:
                 with z.open(name) as f:
                     content = f.read()
-                    soup = BeautifulSoup(content, "xml")
-                    text = soup.get_text(separator=" ", strip=True)
+                    text = _chapter_text(content)
 
                     if len(text) < 50:
                         continue
@@ -82,6 +94,7 @@ def parse_epub_from_zip(epub_path: Path) -> List[Document]:
                         metadata={
                             "source": "epub",
                             "book_title": title,
+                            "title": title,
                             "chapter": chapter_idx,
                             "epub_file": epub_path.name,
                         },
@@ -104,13 +117,14 @@ def load_epub_books(epub_dir: Path, cache_file: Path = None, force_recreate: boo
         Document 列表
     """
     epub_dir = Path(epub_dir)
+    manifest = {"version": CACHE_VERSION, "files": file_manifest(epub_dir, ".epub")}
 
     if cache_file and cache_file.exists() and not force_recreate:
-        with open(cache_file, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            return [Document(page_content=item["content"], metadata=item["metadata"]) for item in data]
+        cached = read_cached_documents(cache_file, manifest)
+        if cached is not None:
+            return cached
 
-    epub_files = list(epub_dir.glob("*.epub"))
+    epub_files = sorted(epub_dir.glob("*.epub"))
     if not epub_files:
         log.warning(f"提示: 在 {epub_dir} 中未找到 epub 文件")
         return []
@@ -119,6 +133,8 @@ def load_epub_books(epub_dir: Path, cache_file: Path = None, force_recreate: boo
     for epub_path in epub_files:
         try:
             docs = parse_epub(epub_path)
+            if not docs:
+                docs = parse_epub_from_zip(epub_path)
             log.info(f"  解析 {epub_path.name}: {len(docs)} 个片段")
             all_docs.extend(docs)
         except Exception as e:
@@ -128,14 +144,13 @@ def load_epub_books(epub_dir: Path, cache_file: Path = None, force_recreate: boo
                 log.info(f"  备用方法解析 {epub_path.name}: {len(docs)} 个片段")
                 all_docs.extend(docs)
             except Exception as e2:
-                log.error(f"  备用方法也失败: {e2}")
+                raise ValueError(f"无法解析 EPUB: {epub_path.name}") from e2
+        if not docs:
+            raise ValueError(f"EPUB 中未找到有效正文: {epub_path.name}")
 
     # 保存缓存
     if cache_file:
-        cache_file.parent.mkdir(parents=True, exist_ok=True)
-        data = [{"content": doc.page_content, "metadata": doc.metadata} for doc in all_docs]
-        with open(cache_file, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        write_cached_documents(cache_file, manifest, all_docs)
         log.info(f"  epub 缓存已保存: {cache_file}")
 
     return all_docs

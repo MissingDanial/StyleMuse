@@ -179,9 +179,7 @@ class TestEnvFileRoundtrip:
 
             content = fake_path.read_text(encoding="utf-8")
             assert "# header" in content
-            assert "OLD_KEY=new_val" in content
-            assert "ANOTHER=yes" in content
-            assert "NEW_KEY=brand_new" in content
+            assert app_module._read_env_file() == {"OLD_KEY": "new_val", "ANOTHER": "yes", "NEW_KEY": "brand_new"}
 
 
 # ---------------------------------------------------------------------------
@@ -202,10 +200,10 @@ class TestMaskKey:
         assert app_module._mask_key("1234567") == "****"  # exactly 7
 
     def test_exactly_eight_chars(self):
-        """An 8-char key shows first 4 and last 4 with nothing masked."""
+        """Short keys must never be returned in full."""
         import app as app_module
         result = app_module._mask_key("abcdefgh")
-        assert result == "abcdefgh"
+        assert result == "****"
 
     def test_long_key_masks_middle(self):
         """A long key shows first 4 and last 4 chars with '*' in between."""

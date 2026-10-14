@@ -1,0 +1,694 @@
+{
+  "schema_version": 1,
+  "label_basis": "Agent-authored controlled transformations; not independent human adjudications or legal labels",
+  "task": "Retrieve localized source reuse candidates, including attributed quotation; do not infer plagiarism",
+  "split_rule": "Disjoint source families; f01-f06 development, f07-f12 held out",
+  "sources": [
+    {
+      "id": "f01",
+      "title": "渡口与钥匙",
+      "split": "development",
+      "text": "黄昏时，我把旧钥匙交给了摆渡人，他把它挂在桥边。等我回来时，渡口已变成了菜园，只有那把钥匙还悬在树上。"
+    },
+    {
+      "id": "f02",
+      "title": "屋里的钟",
+      "split": "development",
+      "text": "父亲把坏钟埋进屋后的土里，说它该歇一歇了。第二年那里长出一株向日葵，花盘始终朝着卧室的窗户。"
+    },
+    {
+      "id": "f03",
+      "title": "榆树的门牌",
+      "split": "development",
+      "text": "村里拆房时，母亲把旧门牌钉在榆树上。每年冬天，她仍到树下等邮差，终于等来一封写着树叶名字的信。"
+    },
+    {
+      "id": "f04",
+      "title": "狗与井盖",
+      "split": "development",
+      "text": "那条白狗每天把耳朵贴在旧井盖上，听主人多年前落下的一枚铜钱。大雨后井水涨起来，狗却把叫声留在了干燥的碗里。"
+    },
+    {
+      "id": "f05",
+      "title": "牛与针",
+      "split": "development",
+      "text": "奶奶把断针藏在牛铃里，怕针还想缝一件衣服。秋天卖牛以后，铃铛留在门上，每次响起来，屋里的旧棉袄就抖一下。"
+    },
+    {
+      "id": "f06",
+      "title": "电影院的票",
+      "split": "development",
+      "text": "电影散场后，售票员把最后一张票折成小船，放进放映室漏下的雨水。第二天屏幕上只剩一条河，观众都坐在河岸上。"
+    },
+    {
+      "id": "f07",
+      "title": "地铁里的瓶子",
+      "split": "holdout",
+      "text": "清洁工在末班地铁捡到一只装着海水的瓶子，把它放在广播旁。后来每到终点，列车便轻轻晃动，像一条不肯靠岸的船。"
+    },
+    {
+      "id": "f08",
+      "title": "医院的纸鹤",
+      "split": "holdout",
+      "text": "孩子把病历折成纸鹤，挂在走廊尽头的暖气上。春天医生打开窗，那些纸鸟没有飞出去，只把床号带到了窗外的杏树上。"
+    },
+    {
+      "id": "f09",
+      "title": "面包与收据",
+      "split": "holdout",
+      "text": "面包师把欠账收据揉进面团，让那些数字在炉里膨胀。清晨老人买走最轻的一块面包，说昨天欠下的风终于还清了。"
+    },
+    {
+      "id": "f10",
+      "title": "港口的煤灯",
+      "split": "holdout",
+      "text": "守灯人把父亲的煤灯放进废弃的救生圈，推向无人的港湾。多年后潮水送回一圈暖光，岸上的石头终于认出了自己的影子。"
+    },
+    {
+      "id": "f11",
+      "title": "屋顶的收音机",
+      "split": "holdout",
+      "text": "外公把收音机埋在屋顶的雪里，说北方的声音需要冷一点。雪融以后，天线开出一朵铁花，整个夏天只播报蜜蜂经过的消息。"
+    },
+    {
+      "id": "f12",
+      "title": "幼儿园的雨鞋",
+      "split": "holdout",
+      "text": "老师把孩子遗忘的雨鞋摆在沙坑旁，给每双鞋装上一勺月光。毕业那晚，沙子长成小路，鞋子独自走回了不同的家。"
+    }
+  ],
+  "cases": [
+    {
+      "id": "f01-copy",
+      "family": "f01",
+      "split": "development",
+      "kind": "literal_copy",
+      "reuse": true,
+      "source_ids": [
+        "f01"
+      ],
+      "generated": "黄昏时，我把旧钥匙交给了摆渡人，他把它挂在桥边。等我回来时，渡口已变成了菜园，只有那把钥匙还悬在树上。"
+    },
+    {
+      "id": "f01-paraphrase",
+      "family": "f01",
+      "split": "development",
+      "kind": "specific_event_paraphrase",
+      "reuse": true,
+      "source_ids": [
+        "f01"
+      ],
+      "generated": "傍晚，我将一枚老钥匙托付给撑船的老人。重返这里时，码头已经种满蔬菜，树枝上仍吊着那件信物。"
+    },
+    {
+      "id": "f01-theme",
+      "family": "f01",
+      "split": "development",
+      "kind": "same_theme_independent",
+      "reuse": false,
+      "source_ids": [],
+      "generated": "我在码头修补了一夜船帆。清晨，母亲带着热粥来找我，催我赶在涨水前去县城送货。"
+    },
+    {
+      "id": "f01-entities",
+      "family": "f01",
+      "split": "development",
+      "kind": "same_entities_different_events",
+      "reuse": false,
+      "source_ids": [],
+      "generated": "傍晚我到渡口寻找遗失的钥匙。摆渡人借给我一把锄头，我在桥边的菜园里挖了一下午，最后从泥土中找到了它。"
+    },
+    {
+      "id": "f01-quote",
+      "family": "f01",
+      "split": "development",
+      "kind": "attributed_quote",
+      "reuse": true,
+      "source_ids": [
+        "f01"
+      ],
+      "generated": "以下引用《渡口与钥匙》的片段，用于讨论其写法：\n“黄昏时，我把旧钥匙交给了摆渡人，他把它挂在桥边。等我回来时，渡口已变成了菜园，只有那把钥匙还悬在树上。”\n引文结束。这里保留出处，引用是否适当需要单独复核。"
+    },
+    {
+      "id": "f02-copy",
+      "family": "f02",
+      "split": "development",
+      "kind": "literal_copy",
+      "reuse": true,
+      "source_ids": [
+        "f02"
+      ],
+      "generated": "父亲把坏钟埋进屋后的土里，说它该歇一歇了。第二年那里长出一株向日葵，花盘始终朝着卧室的窗户。"
+    },
+    {
+      "id": "f02-paraphrase",
+      "family": "f02",
+      "split": "development",
+      "kind": "specific_event_paraphrase",
+      "reuse": true,
+      "source_ids": [
+        "f02"
+      ],
+      "generated": "那只不走的时钟被爸爸送到了后院地下。他说让它休息。隔了一年，一棵太阳花从埋钟处冒出来，总向睡房的窗口转着脸。"
+    },
+    {
+      "id": "f02-theme",
+      "family": "f02",
+      "split": "development",
+      "kind": "same_theme_independent",
+      "reuse": false,
+      "source_ids": [],
+      "generated": "祖父每天清晨给钟上发条，我负责擦掉玻璃上的灰。搬家那天，我们把钟带到新屋，听着它的响声收拾行李。"
+    },
+    {
+      "id": "f02-entities",
+      "family": "f02",
+      "split": "development",
+      "kind": "same_entities_different_events",
+      "reuse": false,
+      "source_ids": [],
+      "generated": "父亲用坏钟的玻璃给后院的向日葵挡风。我站在卧室窗口看他打磨木框，傍晚花盘上的雨水映出了红色晚霞。"
+    },
+    {
+      "id": "f02-quote",
+      "family": "f02",
+      "split": "development",
+      "kind": "attributed_quote",
+      "reuse": true,
+      "source_ids": [
+        "f02"
+      ],
+      "generated": "以下引用《屋里的钟》的片段，用于讨论其写法：\n“父亲把坏钟埋进屋后的土里，说它该歇一歇了。第二年那里长出一株向日葵，花盘始终朝着卧室的窗户。”\n引文结束。这里保留出处，引用是否适当需要单独复核。"
+    },
+    {
+      "id": "f03-copy",
+      "family": "f03",
+      "split": "development",
+      "kind": "literal_copy",
+      "reuse": true,
+      "source_ids": [
+        "f03"
+      ],
+      "generated": "村里拆房时，母亲把旧门牌钉在榆树上。每年冬天，她仍到树下等邮差，终于等来一封写着树叶名字的信。"
+    },
+    {
+      "id": "f03-paraphrase",
+      "family": "f03",
+      "split": "development",
+      "kind": "specific_event_paraphrase",
+      "reuse": true,
+      "source_ids": [
+        "f03"
+      ],
+      "generated": "老屋拆掉以后，妈妈让那块写着门号的铁片住进了榆树。寒冷的季节她都在那里候着送信人，后来真的收到信，收件人却是一片叶子。"
+    },
+    {
+      "id": "f03-theme",
+      "family": "f03",
+      "split": "development",
+      "kind": "same_theme_independent",
+      "reuse": false,
+      "source_ids": [],
+      "generated": "新来的邮差问我村口榆树有多大年纪。我领他去找木匠，我们在树荫下量木料，商量为河边的小桥换一块踏板。"
+    },
+    {
+      "id": "f03-entities",
+      "family": "f03",
+      "split": "development",
+      "kind": "same_entities_different_events",
+      "reuse": false,
+      "source_ids": [],
+      "generated": "母亲请邮差帮忙卸下榆树上的旧门牌。冬日的树枝挡住了路灯，我们把铁片擦净，交给村里的孩子当作识字卡片。"
+    },
+    {
+      "id": "f03-quote",
+      "family": "f03",
+      "split": "development",
+      "kind": "attributed_quote",
+      "reuse": true,
+      "source_ids": [
+        "f03"
+      ],
+      "generated": "以下引用《榆树的门牌》的片段，用于讨论其写法：\n“村里拆房时，母亲把旧门牌钉在榆树上。每年冬天，她仍到树下等邮差，终于等来一封写着树叶名字的信。”\n引文结束。这里保留出处，引用是否适当需要单独复核。"
+    },
+    {
+      "id": "f04-copy",
+      "family": "f04",
+      "split": "development",
+      "kind": "literal_copy",
+      "reuse": true,
+      "source_ids": [
+        "f04"
+      ],
+      "generated": "那条白狗每天把耳朵贴在旧井盖上，听主人多年前落下的一枚铜钱。大雨后井水涨起来，狗却把叫声留在了干燥的碗里。"
+    },
+    {
+      "id": "f04-paraphrase",
+      "family": "f04",
+      "split": "development",
+      "kind": "specific_event_paraphrase",
+      "reuse": true,
+      "source_ids": [
+        "f04"
+      ],
+      "generated": "白色的狗日日伏在封住井口的盖子旁，像在寻找主人早年掉进去的钱币的声音。雨把井灌满以后，它的吠声仿佛被收进一只没有水的饭碗。"
+    },
+    {
+      "id": "f04-theme",
+      "family": "f04",
+      "split": "development",
+      "kind": "same_theme_independent",
+      "reuse": false,
+      "source_ids": [],
+      "generated": "我给邻居的狗做了一个新窝。它嫌里面太暖，拖着垫子睡到井边的草地上，清早陪邻居到集市买盐。"
+    },
+    {
+      "id": "f04-entities",
+      "family": "f04",
+      "split": "development",
+      "kind": "same_entities_different_events",
+      "reuse": false,
+      "source_ids": [],
+      "generated": "白狗咬着一枚铜钱跑到旧井旁。主人打开井盖汲水，把水倒进碗里洗净钱币，准备拿它给孩子讲从前的买卖。"
+    },
+    {
+      "id": "f04-quote",
+      "family": "f04",
+      "split": "development",
+      "kind": "attributed_quote",
+      "reuse": true,
+      "source_ids": [
+        "f04"
+      ],
+      "generated": "以下引用《狗与井盖》的片段，用于讨论其写法：\n“那条白狗每天把耳朵贴在旧井盖上，听主人多年前落下的一枚铜钱。大雨后井水涨起来，狗却把叫声留在了干燥的碗里。”\n引文结束。这里保留出处，引用是否适当需要单独复核。"
+    },
+    {
+      "id": "f05-copy",
+      "family": "f05",
+      "split": "development",
+      "kind": "literal_copy",
+      "reuse": true,
+      "source_ids": [
+        "f05"
+      ],
+      "generated": "奶奶把断针藏在牛铃里，怕针还想缝一件衣服。秋天卖牛以后，铃铛留在门上，每次响起来，屋里的旧棉袄就抖一下。"
+    },
+    {
+      "id": "f05-paraphrase",
+      "family": "f05",
+      "split": "development",
+      "kind": "specific_event_paraphrase",
+      "reuse": true,
+      "source_ids": [
+        "f05"
+      ],
+      "generated": "祖母把折断的缝衣针塞入牲口颈上的铃中，担心它仍惦记做衣裳。牛到了别人家，那只铃却守着我们的门，铃音一起，旧夹袄便微微颤动。"
+    },
+    {
+      "id": "f05-theme",
+      "family": "f05",
+      "split": "development",
+      "kind": "same_theme_independent",
+      "reuse": false,
+      "source_ids": [],
+      "generated": "奶奶教我给棉袄补袖口。牛在屋外吃草，铃声把针脚的节奏搅乱了，我索性搬一张凳子去窗边重新穿线。"
+    },
+    {
+      "id": "f05-entities",
+      "family": "f05",
+      "split": "development",
+      "kind": "same_entities_different_events",
+      "reuse": false,
+      "source_ids": [],
+      "generated": "奶奶拆下牛铃，用里面的断针给门上的纸花扎孔。秋天她把旧棉袄裁成小垫子，铺在铃铛下面，免得它碰伤木门。"
+    },
+    {
+      "id": "f05-quote",
+      "family": "f05",
+      "split": "development",
+      "kind": "attributed_quote",
+      "reuse": true,
+      "source_ids": [
+        "f05"
+      ],
+      "generated": "以下引用《牛与针》的片段，用于讨论其写法：\n“奶奶把断针藏在牛铃里，怕针还想缝一件衣服。秋天卖牛以后，铃铛留在门上，每次响起来，屋里的旧棉袄就抖一下。”\n引文结束。这里保留出处，引用是否适当需要单独复核。"
+    },
+    {
+      "id": "f06-copy",
+      "family": "f06",
+      "split": "development",
+      "kind": "literal_copy",
+      "reuse": true,
+      "source_ids": [
+        "f06"
+      ],
+      "generated": "电影散场后，售票员把最后一张票折成小船，放进放映室漏下的雨水。第二天屏幕上只剩一条河，观众都坐在河岸上。"
+    },
+    {
+      "id": "f06-paraphrase",
+      "family": "f06",
+      "split": "development",
+      "kind": "specific_event_paraphrase",
+      "reuse": true,
+      "source_ids": [
+        "f06"
+      ],
+      "generated": "观众走光了，卖票的人将剩下的票根叠成船，送入机房渗来的水中。翌日白幕变成了流水，所有来看电影的人仿佛改坐到了岸边。"
+    },
+    {
+      "id": "f06-theme",
+      "family": "f06",
+      "split": "development",
+      "kind": "same_theme_independent",
+      "reuse": false,
+      "source_ids": [],
+      "generated": "我第一次看电影时没有找到座位，售票员给我搬来一把木椅。开场灯灭了，我抱着椅背看完整场，回家路上一直谈论演员的帽子。"
+    },
+    {
+      "id": "f06-entities",
+      "family": "f06",
+      "split": "development",
+      "kind": "same_entities_different_events",
+      "reuse": false,
+      "source_ids": [],
+      "generated": "放映室漏雨，售票员用旧电影票擦干了桌面。他把河流的影片换成儿童喜剧，观众笑起来时，门外的小船被风吹翻了。"
+    },
+    {
+      "id": "f06-quote",
+      "family": "f06",
+      "split": "development",
+      "kind": "attributed_quote",
+      "reuse": true,
+      "source_ids": [
+        "f06"
+      ],
+      "generated": "以下引用《电影院的票》的片段，用于讨论其写法：\n“电影散场后，售票员把最后一张票折成小船，放进放映室漏下的雨水。第二天屏幕上只剩一条河，观众都坐在河岸上。”\n引文结束。这里保留出处，引用是否适当需要单独复核。"
+    },
+    {
+      "id": "f07-copy",
+      "family": "f07",
+      "split": "holdout",
+      "kind": "literal_copy",
+      "reuse": true,
+      "source_ids": [
+        "f07"
+      ],
+      "generated": "清洁工在末班地铁捡到一只装着海水的瓶子，把它放在广播旁。后来每到终点，列车便轻轻晃动，像一条不肯靠岸的船。"
+    },
+    {
+      "id": "f07-paraphrase",
+      "family": "f07",
+      "split": "holdout",
+      "kind": "specific_event_paraphrase",
+      "reuse": true,
+      "source_ids": [
+        "f07"
+      ],
+      "generated": "最后一趟车上，打扫车厢的人找到一瓶咸水，安置在播音设备边。此后驶入总站时，地铁总轻摇起来，仿佛仍在海上漂泊。"
+    },
+    {
+      "id": "f07-theme",
+      "family": "f07",
+      "split": "holdout",
+      "kind": "same_theme_independent",
+      "reuse": false,
+      "source_ids": [],
+      "generated": "末班地铁里只剩我和一位护士。我们商量明早在哪里换乘，车停下后各自收好饭盒，在不同的出口走上街面。"
+    },
+    {
+      "id": "f07-entities",
+      "family": "f07",
+      "split": "holdout",
+      "kind": "same_entities_different_events",
+      "reuse": false,
+      "source_ids": [],
+      "generated": "清洁工把地铁里的海水瓶拿去擦广播外壳。车在终点停稳后，他上了一条接驳船，将空瓶送进码头的回收箱。"
+    },
+    {
+      "id": "f07-quote",
+      "family": "f07",
+      "split": "holdout",
+      "kind": "attributed_quote",
+      "reuse": true,
+      "source_ids": [
+        "f07"
+      ],
+      "generated": "以下引用《地铁里的瓶子》的片段，用于讨论其写法：\n“清洁工在末班地铁捡到一只装着海水的瓶子，把它放在广播旁。后来每到终点，列车便轻轻晃动，像一条不肯靠岸的船。”\n引文结束。这里保留出处，引用是否适当需要单独复核。"
+    },
+    {
+      "id": "f08-copy",
+      "family": "f08",
+      "split": "holdout",
+      "kind": "literal_copy",
+      "reuse": true,
+      "source_ids": [
+        "f08"
+      ],
+      "generated": "孩子把病历折成纸鹤，挂在走廊尽头的暖气上。春天医生打开窗，那些纸鸟没有飞出去，只把床号带到了窗外的杏树上。"
+    },
+    {
+      "id": "f08-paraphrase",
+      "family": "f08",
+      "split": "holdout",
+      "kind": "specific_event_paraphrase",
+      "reuse": true,
+      "source_ids": [
+        "f08"
+      ],
+      "generated": "小孩用记录病情的纸叠出一群白鸟，让它们停在廊道里的取暖管上。到了春日，大夫推开窗，鸟儿仍在原处，病床的数字却搬上了外面的杏枝。"
+    },
+    {
+      "id": "f08-theme",
+      "family": "f08",
+      "split": "holdout",
+      "kind": "same_theme_independent",
+      "reuse": false,
+      "source_ids": [],
+      "generated": "我在医院替弟弟排队取药，听见走廊有人练习口琴。医生写好处方，我们到楼下买一束花，等病房的探视时间开始。"
+    },
+    {
+      "id": "f08-entities",
+      "family": "f08",
+      "split": "holdout",
+      "kind": "same_entities_different_events",
+      "reuse": false,
+      "source_ids": [],
+      "generated": "医生用纸鹤向孩子解释病历上的床号。走廊暖气停了，他关紧窗户，剪下一枝杏花放在桌上，纸鹤成了固定花枝的夹子。"
+    },
+    {
+      "id": "f08-quote",
+      "family": "f08",
+      "split": "holdout",
+      "kind": "attributed_quote",
+      "reuse": true,
+      "source_ids": [
+        "f08"
+      ],
+      "generated": "以下引用《医院的纸鹤》的片段，用于讨论其写法：\n“孩子把病历折成纸鹤，挂在走廊尽头的暖气上。春天医生打开窗，那些纸鸟没有飞出去，只把床号带到了窗外的杏树上。”\n引文结束。这里保留出处，引用是否适当需要单独复核。"
+    },
+    {
+      "id": "f09-copy",
+      "family": "f09",
+      "split": "holdout",
+      "kind": "literal_copy",
+      "reuse": true,
+      "source_ids": [
+        "f09"
+      ],
+      "generated": "面包师把欠账收据揉进面团，让那些数字在炉里膨胀。清晨老人买走最轻的一块面包，说昨天欠下的风终于还清了。"
+    },
+    {
+      "id": "f09-paraphrase",
+      "family": "f09",
+      "split": "holdout",
+      "kind": "specific_event_paraphrase",
+      "reuse": true,
+      "source_ids": [
+        "f09"
+      ],
+      "generated": "做面包的人将赊账的纸条和进了面粉，账上的数目随着烘烤一同发起。天亮后一位长者挑了重量最小的一份，说昨日借来的风已经归还。"
+    },
+    {
+      "id": "f09-theme",
+      "family": "f09",
+      "split": "holdout",
+      "kind": "same_theme_independent",
+      "reuse": false,
+      "source_ids": [],
+      "generated": "每天七点，面包店门前就排起了队。我帮老人选无糖的面包，店员认真核对找零，忙完以后端出一盘刚烤好的饼干。"
+    },
+    {
+      "id": "f09-entities",
+      "family": "f09",
+      "split": "holdout",
+      "kind": "same_entities_different_events",
+      "reuse": false,
+      "source_ids": [],
+      "generated": "老人把欠账收据交给面包师，换来一袋面团。他称好重量，把收据压在窗边挡风，决定回家用自己的炉子烤早餐。"
+    },
+    {
+      "id": "f09-quote",
+      "family": "f09",
+      "split": "holdout",
+      "kind": "attributed_quote",
+      "reuse": true,
+      "source_ids": [
+        "f09"
+      ],
+      "generated": "以下引用《面包与收据》的片段，用于讨论其写法：\n“面包师把欠账收据揉进面团，让那些数字在炉里膨胀。清晨老人买走最轻的一块面包，说昨天欠下的风终于还清了。”\n引文结束。这里保留出处，引用是否适当需要单独复核。"
+    },
+    {
+      "id": "f10-copy",
+      "family": "f10",
+      "split": "holdout",
+      "kind": "literal_copy",
+      "reuse": true,
+      "source_ids": [
+        "f10"
+      ],
+      "generated": "守灯人把父亲的煤灯放进废弃的救生圈，推向无人的港湾。多年后潮水送回一圈暖光，岸上的石头终于认出了自己的影子。"
+    },
+    {
+      "id": "f10-paraphrase",
+      "family": "f10",
+      "split": "holdout",
+      "kind": "specific_event_paraphrase",
+      "reuse": true,
+      "source_ids": [
+        "f10"
+      ],
+      "generated": "看守灯塔的人让父亲留下的油灯坐进旧浮圈，漂到寂静的湾里。隔了许多年，海浪归还一环温热的亮色，海边岩石才找回熟悉的暗影。"
+    },
+    {
+      "id": "f10-theme",
+      "family": "f10",
+      "split": "holdout",
+      "kind": "same_theme_independent",
+      "reuse": false,
+      "source_ids": [],
+      "generated": "港口停电时，守灯人借我一盏煤灯。我替渔船记录靠岸时间，天亮以后把本子和灯一起送还，顺便买了两条鲜鱼。"
+    },
+    {
+      "id": "f10-entities",
+      "family": "f10",
+      "split": "holdout",
+      "kind": "same_entities_different_events",
+      "reuse": false,
+      "source_ids": [],
+      "generated": "守灯人用父亲的煤灯检查救生圈上的裂缝。他把圈带回港湾修补，潮水退去后，我们坐在岸边的石头上给它涂漆。"
+    },
+    {
+      "id": "f10-quote",
+      "family": "f10",
+      "split": "holdout",
+      "kind": "attributed_quote",
+      "reuse": true,
+      "source_ids": [
+        "f10"
+      ],
+      "generated": "以下引用《港口的煤灯》的片段，用于讨论其写法：\n“守灯人把父亲的煤灯放进废弃的救生圈，推向无人的港湾。多年后潮水送回一圈暖光，岸上的石头终于认出了自己的影子。”\n引文结束。这里保留出处，引用是否适当需要单独复核。"
+    },
+    {
+      "id": "f11-copy",
+      "family": "f11",
+      "split": "holdout",
+      "kind": "literal_copy",
+      "reuse": true,
+      "source_ids": [
+        "f11"
+      ],
+      "generated": "外公把收音机埋在屋顶的雪里，说北方的声音需要冷一点。雪融以后，天线开出一朵铁花，整个夏天只播报蜜蜂经过的消息。"
+    },
+    {
+      "id": "f11-paraphrase",
+      "family": "f11",
+      "split": "holdout",
+      "kind": "specific_event_paraphrase",
+      "reuse": true,
+      "source_ids": [
+        "f11"
+      ],
+      "generated": "姥爷将广播机藏入房顶积雪，觉得远处的声音也该降温。冰雪化尽，金属花从接收杆上长起，此后漫长暑季的新闻都是蜂群路过。"
+    },
+    {
+      "id": "f11-theme",
+      "family": "f11",
+      "split": "holdout",
+      "kind": "same_theme_independent",
+      "reuse": false,
+      "source_ids": [],
+      "generated": "夏天我和外公在屋顶听球赛，收音机的电池很快用完。邻居送来新的电池，我们记下比分，等晚饭以后再听新闻。"
+    },
+    {
+      "id": "f11-entities",
+      "family": "f11",
+      "split": "holdout",
+      "kind": "same_entities_different_events",
+      "reuse": false,
+      "source_ids": [],
+      "generated": "外公用收音机的旧天线在屋顶画雪花。夏天他把铁花挂到窗边赶蜜蜂，重新装好收音机，听北方来的天气预报。"
+    },
+    {
+      "id": "f11-quote",
+      "family": "f11",
+      "split": "holdout",
+      "kind": "attributed_quote",
+      "reuse": true,
+      "source_ids": [
+        "f11"
+      ],
+      "generated": "以下引用《屋顶的收音机》的片段，用于讨论其写法：\n“外公把收音机埋在屋顶的雪里，说北方的声音需要冷一点。雪融以后，天线开出一朵铁花，整个夏天只播报蜜蜂经过的消息。”\n引文结束。这里保留出处，引用是否适当需要单独复核。"
+    },
+    {
+      "id": "f12-copy",
+      "family": "f12",
+      "split": "holdout",
+      "kind": "literal_copy",
+      "reuse": true,
+      "source_ids": [
+        "f12"
+      ],
+      "generated": "老师把孩子遗忘的雨鞋摆在沙坑旁，给每双鞋装上一勺月光。毕业那晚，沙子长成小路，鞋子独自走回了不同的家。"
+    },
+    {
+      "id": "f12-paraphrase",
+      "family": "f12",
+      "split": "holdout",
+      "kind": "specific_event_paraphrase",
+      "reuse": true,
+      "source_ids": [
+        "f12"
+      ],
+      "generated": "幼儿园的老师把没人领走的胶靴排在玩沙的地方，一双双添入月色。离园仪式的夜里，砂粒铺出了道路，那些靴子分别踏上回家的路。"
+    },
+    {
+      "id": "f12-theme",
+      "family": "f12",
+      "split": "holdout",
+      "kind": "same_theme_independent",
+      "reuse": false,
+      "source_ids": [],
+      "generated": "幼儿园组织孩子在沙坑里种豆子。老师给每人发一把小铲，雨停以后大家换好鞋，一起观察豆苗有没有长高。"
+    },
+    {
+      "id": "f12-entities",
+      "family": "f12",
+      "split": "holdout",
+      "kind": "same_entities_different_events",
+      "reuse": false,
+      "source_ids": [],
+      "generated": "毕业时老师把雨鞋里的沙子倒回沙坑。孩子穿着鞋在月光下唱歌，家长沿小路来接他们，每个人都带走了自己的花盆。"
+    },
+    {
+      "id": "f12-quote",
+      "family": "f12",
+      "split": "holdout",
+      "kind": "attributed_quote",
+      "reuse": true,
+      "source_ids": [
+        "f12"
+      ],
+      "generated": "以下引用《幼儿园的雨鞋》的片段，用于讨论其写法：\n“老师把孩子遗忘的雨鞋摆在沙坑旁，给每双鞋装上一勺月光。毕业那晚，沙子长成小路，鞋子独自走回了不同的家。”\n引文结束。这里保留出处，引用是否适当需要单独复核。"
+    }
+  ]
+}

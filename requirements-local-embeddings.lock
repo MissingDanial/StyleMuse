@@ -1,0 +1,102 @@
+anyio==4.15.1
+    # via
+    #   -c requirements.lock
+    #   httpx
+certifi==2026.7.22
+    # via
+    #   -c requirements.lock
+    #   httpcore
+    #   httpx
+    #   requests
+charset-normalizer==3.5.2
+    # via
+    #   -c requirements.lock
+    #   requests
+click==8.5.0
+    # via
+    #   -c requirements.lock
+    #   huggingface-hub
+colorama==0.4.6
+    # via
+    #   -c requirements.lock
+    #   loguru
+    #   tqdm
+fastembed==0.8.1
+    # via -r requirements-local-embeddings.txt
+filelock==4.1.1
+    # via huggingface-hub
+flatbuffers==25.12.19
+    # via onnxruntime
+fsspec==2026.9.0
+    # via huggingface-hub
+h11==0.16.0
+    # via
+    #   -c requirements.lock
+    #   httpcore
+hf-xet==1.7.0
+    # via huggingface-hub
+httpcore==1.0.9
+    # via
+    #   -c requirements.lock
+    #   httpx
+httpx==0.28.1
+    # via
+    #   -c requirements.lock
+    #   huggingface-hub
+huggingface-hub==1.33.0
+    # via
+    #   fastembed
+    #   tokenizers
+idna==3.20
+    # via
+    #   -c requirements.lock
+    #   anyio
+    #   httpx
+    #   requests
+loguru==0.7.3
+    # via fastembed
+mmh3==5.3.1
+    # via fastembed
+numpy==2.5.4
+    # via
+    #   -c requirements.lock
+    #   fastembed
+    #   onnxruntime
+onnxruntime==1.31.0
+    # via fastembed
+packaging==26.3
+    # via
+    #   -c requirements.lock
+    #   huggingface-hub
+    #   onnxruntime
+pillow==12.3.0
+    # via fastembed
+protobuf==7.36.2
+    # via onnxruntime
+py-rust-stemmers==0.1.8
+    # via fastembed
+pyyaml==6.0.3
+    # via
+    #   -c requirements.lock
+    #   huggingface-hub
+requests==2.34.2
+    # via
+    #   -c requirements.lock
+    #   fastembed
+tokenizers==0.23.3
+    # via fastembed
+tqdm==4.70.1
+    # via
+    #   fastembed
+    #   huggingface-hub
+typing-extensions==4.16.0
+    # via
+    #   -c requirements.lock
+    #   anyio
+    #   huggingface-hub
+urllib3==2.8.0
+    # via
+    #   -c requirements.lock
+    #   requests
+win32-setctime==1.2.0
+    # via loguru

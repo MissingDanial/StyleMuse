@@ -15,12 +15,16 @@ def validate_simple_name(value: str, field_name: str = "name") -> str:
     name = (value or "").strip()
     if not name:
         raise ValueError(f"{field_name} 不能为空")
-    if name in {".", ".."}:
+    if name.startswith("."):
         raise ValueError(f"{field_name} 不能是 {name!r}")
     if any(ch in name for ch in ("/", "\\")) or Path(name).name != name:
         raise ValueError(f"{field_name} 不能包含路径分隔符")
     if CONTROL_CHARS_RE.search(name):
         raise ValueError(f"{field_name} 不能包含控制字符")
+    if len(name) > 120 or any(char in WINDOWS_RESERVED_CHARS for char in name) or name.endswith((".", " ")):
+        raise ValueError(f"{field_name} 包含不支持的文件名字符或过长")
+    if name.split(".")[0].upper() in {"CON", "PRN", "AUX", "NUL", *[f"COM{i}" for i in range(1, 10)], *[f"LPT{i}" for i in range(1, 10)]}:
+        raise ValueError(f"{field_name} 是系统保留名称")
     return name
 
 
@@ -36,6 +40,8 @@ def safe_filename(value: str, default: str = "untitled", suffix: str = "") -> st
     stem = stem.strip(" ._")
     if not stem:
         stem = default
+    if stem.split(".")[0].upper() in {"CON", "PRN", "AUX", "NUL", *[f"COM{i}" for i in range(1, 10)], *[f"LPT{i}" for i in range(1, 10)]}:
+        stem = "_" + stem
     if len(stem) > 120:
         stem = stem[:120].rstrip(" ._") or default
     return f"{stem}{suffix}"
@@ -56,12 +62,34 @@ def unique_path(directory: Path, filename: str) -> Path:
     raise ValueError("could not generate a unique filename")
 
 
+def write_unique_text(directory: Path, filename: str, text: str) -> Path:
+    """Exclusive creation prevents concurrent requests from overwriting drafts."""
+    stem, suffix = Path(filename).stem, Path(filename).suffix
+    for number in range(1, 1000):
+        candidate = directory / (filename if number == 1 else f"{stem}_{number}{suffix}")
+        try:
+            with candidate.open("x", encoding="utf-8") as stream:
+                stream.write(text)
+            return candidate
+        except FileExistsError:
+            continue
+    raise ValueError("could not generate a unique filename")
+
+
 def resolve_under_base(base_dir: Path, candidate: Path, field_name: str = "path") -> Path:
     """Resolve a path and ensure it remains inside the provided base directory."""
     base = base_dir.resolve()
-    resolved = candidate.resolve()
+    resolved = base if candidate == base_dir else candidate.resolve()
     if resolved != base and base not in resolved.parents:
-        raise ValueError(f"{field_name} 必须位于项目目录内: {base}")
+        # Windows may resolve an existing component to its 8.3 alias while a
+        # concurrent mkdir changes which components exist. Compare identities
+        # rather than accepting a lexical prefix that could escape the base.
+        try:
+            inside = any(base.samefile(parent) for parent in (resolved, *resolved.parents) if parent.exists())
+        except OSError:
+            inside = False
+        if not inside:
+            raise ValueError(f"{field_name} 必须位于项目目录内: {base}")
     return resolved
 
 

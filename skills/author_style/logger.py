@@ -6,10 +6,11 @@ import logging
 import os
 import sys
 import tempfile
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 LOG_DIR = Path(os.getenv("STYLEMUSE_LOG_DIR", Path(__file__).parent.parent.parent / "logs"))
-LOG_DIR.mkdir(exist_ok=True)
+LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def get_logger(name: str) -> logging.Logger:
@@ -27,7 +28,7 @@ def get_logger(name: str) -> logging.Logger:
     if logger.handlers:
         return logger
 
-    logger.setLevel(logging.DEBUG)
+    logger.setLevel(logging.DEBUG if os.getenv("STYLEMUSE_LOG_PREVIEWS", "0") == "1" else logging.INFO)
 
     # 控制台 handler
     console = logging.StreamHandler(sys.stdout)
@@ -53,7 +54,7 @@ def get_logger(name: str) -> logging.Logger:
 
 def _make_file_handler(path: Path):
     try:
-        file_handler = logging.FileHandler(path, encoding="utf-8")
+        file_handler = RotatingFileHandler(path, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8")
     except OSError:
         return None
     file_handler.setLevel(logging.DEBUG)

@@ -7,7 +7,15 @@
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-    <div class="app">
+    <section id="access-panel" class="card hidden" style="max-width: 420px; margin: 10vh auto">
+        <h2>访问 StyleMuse</h2>
+        <form onsubmit="handleLogin(event)">
+            <div class="form-group"><label for="access-password">访问密码</label>
+                <input id="access-password" type="password" autocomplete="current-password" required></div>
+            <button class="btn btn-primary" type="submit">进入写作工坊</button>
+        </form>
+    </section>
+    <div class="app hidden" id="app-content">
         <!-- 侧边栏 -->
         <nav class="sidebar">
             <div class="logo">
@@ -21,6 +29,8 @@
                 <li class="nav-item" data-tab="authors">
                     <span class="icon">📚</span> 作家管理
                 </li>
+                <li class="nav-item" data-tab="history"><span class="icon">▤</span> 作品库</li>
+                <li class="nav-item" data-tab="jobs"><span class="icon">◷</span> 任务记录</li>
                 <li class="nav-item" data-tab="settings">
                     <span class="icon">⚙️</span> 模型配置
                 </li>
@@ -78,7 +88,7 @@
                         <input type="text" id="write-save-dir" placeholder="留空则保存到作家 output 目录">
                         <button class="btn btn-small" onclick="handleBrowseFolder()">浏览...</button>
                     </div>
-                    <small>自定义路径需位于项目目录内</small>
+                    <small>自定义路径需位于该作家的 output 目录内</small>
                 </div>
                 <div class="form-group">
                     <label class="checkbox-label">
@@ -87,8 +97,12 @@
                     </label>
                 </div>
                 <div class="btn-row">
-                    <button class="btn btn-primary" id="btn-write" onclick="handleWrite()">开始写作</button>
+                    <button class="btn btn-primary" id="btn-write" onclick="startWriteJob()">开始写作</button>
+                    <button class="btn btn-small hidden" id="btn-cancel-job" onclick="cancelActiveJob()">取消任务</button>
+                    <button class="btn btn-small hidden" id="btn-resume-job" onclick="resumeActiveJob()">继续检查或保存</button>
                 </div>
+                <div class="task-notice hidden" id="job-connection" role="status" aria-live="polite"></div>
+                <button class="btn btn-small hidden" id="btn-confirm-submit" onclick="retryPendingSubmission()">确认提交状态</button>
 
                 <!-- 结果区 -->
                 <div id="write-result" class="result-area hidden">
@@ -96,7 +110,7 @@
                         <h3>生成结果</h3>
                         <div class="result-actions">
                             <span id="write-saved-path" class="saved-path"></span>
-                            <button class="btn btn-small" id="btn-rewrite" onclick="handleRewrite()" disabled>按审稿意见重写</button>
+                            <button class="btn btn-small" id="btn-rewrite" onclick="startRewriteJob()" disabled>按审稿意见重写</button>
                             <button class="btn btn-small" onclick="downloadArticle()">下载</button>
                             <button class="btn btn-small" onclick="copyArticle()">复制</button>
                         </div>
@@ -134,7 +148,9 @@
                             <small>支持 .txt 和 .epub 格式，可多选</small>
                         </div>
                     </div>
-                    <button class="btn btn-primary" onclick="handleCreate()">创建作家</button>
+                    <button class="btn btn-primary" id="btn-create-author" onclick="startImportJob(event)">创建作家</button>
+                    <button class="btn btn-small hidden" id="btn-cancel-import" onclick="cancelActiveJob()">取消导入</button>
+                    <p class="muted" id="import-job-status" aria-live="polite"></p>
                 </div>
                 <div class="card">
                     <h3>已有作家</h3>
@@ -142,6 +158,34 @@
                         <div class="loading">加载中...</div>
                     </div>
                 </div>
+            </div>
+
+            <div class="tab-panel" id="tab-history">
+                <header class="page-header"><div><p class="eyebrow">Manuscripts</p><h2>作品库</h2><p class="muted">每一稿都保留。回看、比较，或从旧稿继续写作。</p></div></header>
+                <div class="history-toolbar">
+                    <input id="history-search" type="search" aria-label="按主题搜索作品" placeholder="按主题搜索" oninput="scheduleHistorySearch()">
+                    <select id="history-author" aria-label="筛选作家" onchange="loadHistory()"><option value="">全部作家</option></select>
+                    <button class="btn btn-small" onclick="loadHistory()">刷新</button>
+                </div>
+                <div class="history-layout">
+                    <section class="card history-shelf"><h3>已保存作品</h3><div id="history-list" class="history-list"><p class="muted">尚无作品</p></div><button class="btn btn-small hidden" id="history-more" onclick="loadHistory(true)">加载更多</button></section>
+                    <section class="card history-reader hidden" id="history-detail">
+                        <div class="panel-head"><div><p class="eyebrow" id="history-detail-author"></p><h3 id="history-detail-title"></h3></div><button class="btn btn-small" onclick="openHistoryInWorkshop()">在工坊打开</button></div>
+                        <label for="history-version">选择版本</label><select id="history-version" onchange="selectHistoryVersion()"></select>
+                        <p class="muted" id="history-version-info"></p>
+                        <div class="btn-row"><button class="btn btn-small" onclick="restoreHistoryVersion()">恢复为新版本</button><button class="btn btn-small" onclick="compareHistoryVersions()">对比版本</button></div>
+                        <div class="article-content history-body" id="history-body"></div>
+                        <div class="comparison hidden" id="history-comparison">
+                            <div class="comparison-controls"><label for="compare-left">对比起点</label><select id="compare-left"></select><label for="compare-right">对比终点</label><select id="compare-right"></select><button class="btn btn-small" onclick="compareHistoryVersions()">更新对比</button></div>
+                            <div class="comparison-columns"><div><h4>前一稿</h4><pre id="compare-left-body"></pre></div><div><h4>后一稿</h4><pre id="compare-right-body"></pre></div></div>
+                            <details><summary>查看逐行变化</summary><pre id="compare-diff"></pre></details>
+                        </div>
+                    </section>
+                </div>
+            </div>
+            <div class="tab-panel" id="tab-jobs">
+                <header class="page-header"><div><p class="eyebrow">Activity</p><h2>任务记录</h2><p class="muted">页面关闭后任务仍在后台执行，可随时回来查看。</p></div><button class="btn btn-small" onclick="loadJobList()">刷新</button></header>
+                <div class="card"><div id="job-list" class="job-list"><p class="muted">暂无任务</p></div></div>
             </div>
 
             <!-- ==================== 模型配置 ==================== -->
@@ -166,7 +210,7 @@
                         </div>
                         <div class="form-group">
                             <label>LLM 模型名称</label>
-                            <input type="text" id="cfg-llm-model" placeholder="deepseek-chat">
+                            <input type="text" id="cfg-llm-model" placeholder="deepseek-flash">
                         </div>
                         <div class="form-group">
                             <label>LLM API 地址</label>
@@ -181,11 +225,16 @@
                             <select id="cfg-emb-provider">
                                 <option value="dashscope">dashscope（千问）</option>
                                 <option value="openai">openai</option>
+                                <option value="local">local（本地中文 BGE，无需密钥）</option>
                             </select>
                         </div>
                         <div class="form-group">
                             <label>Embedding 模型名称</label>
                             <input type="text" id="cfg-emb-model" placeholder="text-embedding-v3">
+                        </div>
+                        <div class="form-group">
+                            <label>Embedding 服务地址（本地模式留空）</label>
+                            <input type="text" id="cfg-emb-url" placeholder="OpenAI 兼容嵌入服务地址">
                         </div>
                         <div class="form-group">
                             <label>Embedding API 密钥 <span id="cfg-emb-key-status" class="badge"></span></label>
@@ -194,6 +243,7 @@
                     </div>
                     <button class="btn btn-primary" onclick="handleSaveConfig()">保存配置</button>
                     <p class="hint">保存后需重启服务生效。密钥留空表示不修改已有值。</p>
+                    <p class="hint">本地模式模型名称填写 BAAI/bge-small-zh-v1.5，无需 Embedding 密钥。DeepSeek 用于写作，向量由本地模型生成。</p>
                 </div>
 
                 <!-- 自定义模型列表 -->
@@ -221,7 +271,7 @@
                             </div>
                             <div class="form-group">
                                 <label>模型名称</label>
-                                <input type="text" id="model-name" placeholder="deepseek-chat">
+                                <input type="text" id="model-name" placeholder="deepseek-flash">
                             </div>
                             <div class="form-group">
                                 <label>API 地址</label>
@@ -241,5 +291,6 @@
 
     <div id="toast" class="toast hidden"></div>
     <script src="/static/app.js"></script>
+    <script src="/static/tasks.js"></script>
 </body>
 </html>

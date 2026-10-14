@@ -1,38 +1,70 @@
-# Python
+# Python runtimes, dependency caches and build artifacts
 __pycache__/
 *.py[cod]
 *.egg-info/
-.pytest_tmp*/
-dist/
-build/
-
-# 虚拟环境
-.venv/
+.venv*/
 venv/
+.uv-cache/
+.cache/
+build/
+dist/
 
-# 环境变量（含 API 密钥）
+# Test, coverage and type-checker artifacts
+.pytest_cache/
+.pytest_tmp*/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Credentials: publish the template, never the local configuration
 .env
+.env.*
+!.env.example
+env_test*.txt
 
-# 旧版数据目录（已迁移到 authors/）
-data/embeddings/
-data/chunks/
+# Application state, downloaded models, evaluations and temporary exports
+/.stylemuse/
+/.tmp/
+/logs/
+*.log
+*.log.*
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite-journal
+*.sqlite3-wal
+*.sqlite3-shm
+*.sqlite3-journal
+*.tmp
+*.bak
 
-# epub 原始书籍（体积大）
-epub_data/*.epub
-authors/*/epub/*.epub
+# Private author workspaces are local by default.
+# Keep only the four public, bundled demonstration files.
+/authors/*
+!/authors/liu_liangcheng/
+/authors/liu_liangcheng/*
+!/authors/liu_liangcheng/config.json
+!/authors/liu_liangcheng/style_guide.md
+!/authors/liu_liangcheng/few_shot.md
+!/authors/liu_liangcheng/works/
+/authors/liu_liangcheng/works/*
+!/authors/liu_liangcheng/works/刘亮程文章汇总.txt
 
-# 向量索引和缓存（可重建）
-authors/*/cache/
+# Legacy runtime data and source books
+/data/embeddings/
+/data/chunks/
+/epub_data/
+*.epub
 
-# 日志
-logs/
-
-# 生成的文章（可选忽略）
-# authors/*/output/
-
-# IDE
+# Editor, assistant and operating-system files
 .vscode/
 .idea/
-
-# Claude Code
 .claude/
+.DS_Store
+Thumbs.db
+Desktop.ini

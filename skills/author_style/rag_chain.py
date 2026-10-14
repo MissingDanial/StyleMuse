@@ -6,7 +6,7 @@
 """
 
 import json
-import random
+import re
 from pathlib import Path
 from typing import List, Dict, Iterator
 
@@ -19,7 +19,8 @@ from .config import (
     get_llm,
     get_embeddings,
 )
-from .loader import load_all_chunks
+from .loader import load_all_chunks, load_source_documents, reference_documents
+from .vector_cache import create_vector_store, load_vector_store, vector_manifest
 from .style_prompt import build_system_prompt, build_user_prompt
 from .logger import get_logger
 from .llm_logger import invoke_with_logging, stream_with_logging
@@ -88,26 +89,6 @@ class QwenEmbeddings(Embeddings):
             raise RuntimeError(f"Embedding failed: {call.message}")
 
 
-def create_vector_store(documents: List[Document], embeddings: Embeddings, persist_dir: Path):
-    """创建向量存储"""
-    from langchain_community.vectorstores import FAISS
-
-    persist_dir.mkdir(parents=True, exist_ok=True)
-    vector_store = FAISS.from_documents(documents, embeddings)
-    vector_store.save_local(str(persist_dir))
-    return vector_store
-
-
-def load_vector_store(embeddings: Embeddings, persist_dir: Path):
-    """加载已有的向量存储"""
-    from langchain_community.vectorstores import FAISS
-
-    index_file = persist_dir / "index.faiss"
-    if index_file.exists():
-        return FAISS.load_local(str(persist_dir), embeddings, allow_dangerous_deserialization=True)
-    return None
-
-
 def retrieve_relevant_context(
     topic: str,
     vector_store,
@@ -128,8 +109,11 @@ def retrieve_relevant_context(
             if score <= similarity_threshold:
                 filtered.append(doc)
 
-        random.shuffle(filtered)
-        final_results = filtered[:top_k]
+        # Preserve distance ordering and remove identical overlapping fragments.
+        unique = {}
+        for doc in filtered:
+            unique.setdefault(doc.page_content, doc)
+        final_results = list(unique.values())[:top_k]
 
         if not final_results:
             return ""
@@ -192,6 +176,9 @@ class AuthorStyleSkill:
         self._embeddings = None
         self.last_plagiarism_result = None
         self.last_review_result = None
+        self._source_documents = None
+        self.retrieval_warning = ""
+        self.last_retrieved_context = ""
 
     def _load_style_guide(self) -> str:
         """加载风格指南"""
@@ -220,17 +207,14 @@ class AuthorStyleSkill:
         if self._vector_store is None:
             embeddings = self._get_embeddings()
             cache_dir = self.author_dir / "cache" / "faiss"
-
-            self._vector_store = load_vector_store(embeddings, cache_dir)
+            documents = load_all_chunks(self.author_dir, chunk_size=self.config["chunk_size"],
+                                        chunk_overlap=self.config["chunk_overlap"])
+            manifest = vector_manifest(documents, self.config)
+            self._vector_store = load_vector_store(embeddings, cache_dir, manifest=manifest)
             if self._vector_store is None:
                 log.info(f"向量库不存在，正在为 '{self.author_name}' 创建...")
-                documents = load_all_chunks(
-                    self.author_dir,
-                    chunk_size=self.config["chunk_size"],
-                    chunk_overlap=self.config["chunk_overlap"],
-                )
                 if documents:
-                    self._vector_store = create_vector_store(documents, embeddings, cache_dir)
+                    self._vector_store = create_vector_store(documents, embeddings, cache_dir, manifest=manifest)
                     log.info(f"向量库创建完成: {len(documents)} 个文本块")
                 else:
                     log.warning("警告: 无文档可索引")
@@ -262,26 +246,14 @@ class AuthorStyleSkill:
         tone_value = tone_options.get(tone, tone_options.get("default", tone))
         length_value = length_options.get(length, length_options.get("medium", length))
 
-        # 检索相关上下文
-        retrieved_context = ""
-        if include_retrieval:
-            try:
-                vector_store = self._get_vector_store()
-                if vector_store:
-                    retrieved_context = retrieve_relevant_context(
-                        topic,
-                        vector_store,
-                        top_k=self.config["retrieval_top_k"],
-                        similarity_threshold=self.config["similarity_threshold"],
-                        retrieval_multiplier=self.config["retrieval_multiplier"],
-                    )
-            except Exception as e:
-                log.error(f"检索失败: {e}")
+        retrieved_context = self._retrieve_context(topic, include_retrieval)
+        self.last_retrieved_context = retrieved_context
 
         # 构建 Prompt
         system_prompt = build_system_prompt(
             topic=topic,
             style_guide=self.style_guide,
+            few_shot=self.few_shot,
             retrieved_context=retrieved_context,
             tone=tone_value,
             length=length_value,
@@ -327,6 +299,7 @@ class AuthorStyleSkill:
         tone: str = "default",
         length: str = "medium",
         include_retrieval: bool = True,
+        run_checks: bool = True,
     ) -> Iterator[str]:
         """
         模仿作家风格写作（流式输出）。
@@ -346,26 +319,14 @@ class AuthorStyleSkill:
         tone_value = tone_options.get(tone, tone_options.get("default", tone))
         length_value = length_options.get(length, length_options.get("medium", length))
 
-        # 检索相关上下文
-        retrieved_context = ""
-        if include_retrieval:
-            try:
-                vector_store = self._get_vector_store()
-                if vector_store:
-                    retrieved_context = retrieve_relevant_context(
-                        topic,
-                        vector_store,
-                        top_k=self.config["retrieval_top_k"],
-                        similarity_threshold=self.config["similarity_threshold"],
-                        retrieval_multiplier=self.config["retrieval_multiplier"],
-                    )
-            except Exception as e:
-                log.error(f"检索失败: {e}")
+        retrieved_context = self._retrieve_context(topic, include_retrieval)
+        self.last_retrieved_context = retrieved_context
 
         # 构建 Prompt
         system_prompt = build_system_prompt(
             topic=topic,
             style_guide=self.style_guide,
+            few_shot=self.few_shot,
             retrieved_context=retrieved_context,
             tone=tone_value,
             length=length_value,
@@ -406,7 +367,8 @@ class AuthorStyleSkill:
             if text:
                 article_chunks.append(text)
                 yield text
-        self._run_post_generation_checks("".join(article_chunks), topic, tone, length)
+        if run_checks:
+            self._run_post_generation_checks("".join(article_chunks), topic, tone, length)
 
     def rewrite(
         self,
@@ -416,6 +378,7 @@ class AuthorStyleSkill:
         tone: str = "default",
         length: str = "medium",
         include_retrieval: bool = True,
+        run_checks: bool = True,
     ) -> str:
         """Rewrite an article using review feedback while preserving author style."""
         tone_options = self.config.get("tone_options", {})
@@ -423,24 +386,13 @@ class AuthorStyleSkill:
         tone_value = tone_options.get(tone, tone_options.get("default", tone))
         length_value = length_options.get(length, length_options.get("medium", length))
 
-        retrieved_context = ""
-        if include_retrieval:
-            try:
-                vector_store = self._get_vector_store()
-                if vector_store:
-                    retrieved_context = retrieve_relevant_context(
-                        topic,
-                        vector_store,
-                        top_k=self.config["retrieval_top_k"],
-                        similarity_threshold=self.config["similarity_threshold"],
-                        retrieval_multiplier=self.config["retrieval_multiplier"],
-                    )
-            except Exception as e:
-                log.error(f"检索失败: {e}")
+        retrieved_context = self._retrieve_context(topic, include_retrieval)
+        self.last_retrieved_context = retrieved_context
 
         system_prompt = build_system_prompt(
             topic=topic,
             style_guide=self.style_guide,
+            few_shot=self.few_shot,
             retrieved_context=retrieved_context,
             tone=tone_value,
             length=length_value,
@@ -490,25 +442,49 @@ class AuthorStyleSkill:
             },
         )
         article = extract_text_from_response(response.content)
-        self._run_post_generation_checks(article, topic, tone, length)
+        if run_checks:
+            self._run_post_generation_checks(article, topic, tone, length)
         return article
 
+    def _retrieve_context(self, topic: str, enabled: bool) -> str:
+        self.retrieval_warning = ""
+        if not enabled:
+            return ""
+        try:
+            store = self._get_vector_store()
+            context = retrieve_relevant_context(topic, store, top_k=self.config["retrieval_top_k"],
+                          similarity_threshold=self.config["similarity_threshold"],
+                          retrieval_multiplier=self.config["retrieval_multiplier"])
+            if not context:
+                self.retrieval_warning = "未检索到有效参考片段，本次仅使用风格指南和示例"
+            return context
+        except Exception as exc:
+            log.error("检索失败: %s", exc)
+            self.retrieval_warning = "检索不可用，本次仅使用风格指南和示例"
+            return ""
+
     def _load_source_documents(self) -> List[Document]:
-        """Load author chunks once for post-generation checks."""
-        return load_all_chunks(
-            self.author_dir,
-            chunk_size=self.config["chunk_size"],
-            chunk_overlap=self.config["chunk_overlap"],
-        )
+        """Use unsplit sources so exact matches can cross retrieval chunk boundaries."""
+        if self._source_documents is None:
+            self._source_documents = load_source_documents(self.author_dir)
+        return self._source_documents
 
     def _run_post_generation_checks(self, article: str, topic: str, tone: str, length: str):
         """Run plagiarism and review checks after generation."""
+        source_load_failed = False
         try:
             source_documents = self._load_source_documents()
         except Exception as e:
             log.error(f"post-generation source loading failed: {e}")
             source_documents = []
-        self.last_plagiarism_result = self._check_plagiarism(article, source_documents)
+            source_load_failed = True
+        references = reference_documents(self.style_guide, self.few_shot, self.last_retrieved_context)
+        self.last_plagiarism_result = self._check_plagiarism(article, source_documents + references)
+        if self.last_plagiarism_result:
+            self.last_plagiarism_result.setdefault("scope", {})["corpus_load"] = "error" if source_load_failed else "complete"
+            if source_load_failed and self.last_plagiarism_result.get("originality_status") != "high_risk":
+                self.last_plagiarism_result.update(passed=None, originality_status="needs_review",
+                                                  warning="原文语料加载失败，来源比对不完整，请复核")
         self.last_review_result = self._review_article(
             article=article,
             topic=topic,
@@ -518,7 +494,7 @@ class AuthorStyleSkill:
         )
 
     def _check_plagiarism(self, article: str, source_documents: List[Document] = None) -> dict:
-        """Run best-effort duplicate-text detection against author chunks."""
+        """Run local text-reuse checks against full sources and prompt references."""
         if not self.config.get("plagiarism_check_enabled", True):
             return None
         try:
@@ -529,12 +505,44 @@ class AuthorStyleSkill:
                 max_common_len=self.config.get("max_common_len", 15),
                 similarity_threshold=self.config.get("plagiarism_similarity_threshold", 0.6),
             )
+            if self.config.get("semantic_reuse_enabled", False):
+                from .semantic_reuse import SemanticIndex, load_profile, local_semantic_embeddings, merge_semantic_result
+                try:
+                    profile_path = Path(self.config.get("semantic_reuse_profile") or "benchmarks/semantic_reuse/profile.json")
+                    if not profile_path.is_absolute():
+                        profile_path = Path(__file__).resolve().parents[2] / profile_path
+                    profile = load_profile(profile_path)
+                    # Dynamic excerpts already contained in the complete works
+                    # need no second embedding of the whole source collection.
+                    base_sources = [doc for doc in source_documents if doc.metadata.get("source_type") != "retrieval"]
+                    extra_sources = []
+                    for doc in source_documents:
+                        if doc.metadata.get("source_type") == "retrieval":
+                            parts = [part.strip() for part in re.split(r"【[^\n]+】\n", doc.page_content) if part.strip()]
+                            if any(not any(part in base.page_content for base in base_sources) for part in parts):
+                                extra_sources.append(doc)
+                    index = SemanticIndex(base_sources, local_semantic_embeddings(self.config),
+                                          self.author_dir / "cache" / "semantic-reuse")
+                    semantic = index.query(article, threshold=profile["threshold"], top_k=profile.get("top_k", 5))
+                    if extra_sources:
+                        extra = SemanticIndex(extra_sources, index.embeddings).query(
+                            article, threshold=profile["threshold"], top_k=profile.get("top_k", 5))
+                        combined = sorted(semantic.get("candidates", []) + extra.get("candidates", []), key=lambda hit: -hit["similarity"])
+                        semantic.update(candidates=combined[:12], candidate_count=semantic.get("candidate_count", 0) + extra.get("candidate_count", 0),
+                                        display_truncated=semantic.get("display_truncated", False) or extra.get("display_truncated", False) or len(combined) > 12)
+                    semantic["calibration"] = {"dataset_sha256": profile.get("dataset_sha256"),
+                                                "basis": profile.get("calibration"), "automatic_verdict": False}
+                except Exception as exc:
+                    log.warning("本地语义召回未完成: %s", type(exc).__name__)
+                    semantic = {"status": "error", "candidates": [], "warning": "本地语义检查未完成，请检查模型缓存和校准配置"}
+                result = merge_semantic_result(result, semantic)
             if not result.get("passed"):
                 log.warning(result.get("warning", "生成内容未通过重复检测"))
             return result
         except Exception as e:
             log.error(f"重复检测失败: {e}")
-            return {"passed": None, "warning": f"重复检测失败: {e}"}
+            return {"status": "error", "passed": None, "originality_status": "not_checked",
+                    "warning": "重复检测失败，请人工复核"}
 
     def _review_article(
         self,

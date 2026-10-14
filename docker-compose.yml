@@ -7,9 +7,11 @@ services:
       - ./.env:/app/.env:ro
       - ./authors:/app/authors
       - ./logs:/app/logs
+      - ./.stylemuse:/app/.stylemuse
     env_file:
       - .env
     environment:
       FLASK_HOST: 0.0.0.0
       FLASK_DEBUG: "0"
+      STYLEMUSE_ACCESS_TOKEN: ${STYLEMUSE_ACCESS_TOKEN:?请在 .env 中配置访问密码}
     restart: unless-stopped

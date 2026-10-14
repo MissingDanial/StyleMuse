@@ -1,11 +1,11 @@
 # 核心依赖
-langchain-core>=0.3.0
-langchain-community>=0.3.0
-langchain-text-splitters>=0.3.0
+langchain-core>=1.6.10,<2.0
+langchain-community>=0.4.2,<0.5
+langchain-text-splitters>=1.1.3,<2.0
 
 # LLM 提供商（按需安装）
-langchain-openai>=0.3.0        # OpenAI 兼容接口（DeepSeek、通义千问、智谱等）
-langchain-anthropic>=0.3.0     # Anthropic 兼容接口（MiniMax 等）
+langchain-openai>=1.7.1,<2.0   # OpenAI 兼容接口（DeepSeek、通义千问、智谱等）
+langchain-anthropic>=1.7.6,<2.0 # Anthropic 兼容接口（MiniMax 等）
 
 # Embedding 模型
 dashscope>=1.20.0              # 千问 Embedding
@@ -19,7 +19,8 @@ beautifulsoup4>=4.12.0
 lxml>=5.0.0
 
 # Web 前端
-flask>=3.0.0
+flask>=3.1.3,<4.0
+waitress>=3.0.2,<4.0
 
 # 工具库
 python-dotenv>=1.0.0

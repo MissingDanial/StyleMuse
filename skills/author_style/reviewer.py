@@ -18,9 +18,9 @@ from .review_prompt import build_review_prompt
 log = get_logger(__name__)
 
 LENGTH_TARGETS = {
-    "short": (300, 700),
-    "medium": (650, 1200),
-    "long": (1200, 2400),
+    "short": (400, 500),
+    "medium": (800, 1000),
+    "long": (1500, 2000),
 }
 
 
@@ -42,11 +42,11 @@ def review_article(
     cfg = config or {}
     source_documents = source_documents or []
     plagiarism_result = plagiarism_result or {
-        "passed": True,
+        "passed": None,
         "max_common": 0,
         "max_common_text": "",
         "similar_docs": [],
-        "warning": "",
+        "warning": "重复检测未完成或未启用",
     }
 
     requirement = _review_requirement(article=article, topic=topic, tone=tone, length=length)
@@ -65,13 +65,16 @@ def review_article(
         "passed": decision == "pass",
         "score": score,
         "decision": decision,
+        "requirement_status": requirement["status"],
+        "originality_status": plagiarism["originality_status"],
         "requirement": requirement,
         "style": style,
         "plagiarism": plagiarism,
         "suggestions": _build_suggestions(requirement, style, plagiarism),
     }
 
-    if cfg.get("review_llm_enabled") and llm is not None:
+    if cfg.get("review_llm_enabled"):
+        result["rule_summary"] = {"score": score, "decision": decision}
         result["llm_review"] = _run_llm_review(
             llm=llm,
             author_name=author_name,
@@ -84,6 +87,22 @@ def review_article(
             plagiarism_result=plagiarism_result,
         )
         result["agent"] = "rule+llm"
+        llm_review = result["llm_review"]
+        if llm_review["ok"]:
+            data = llm_review["data"]
+            severity = {"pass": 0, "warn": 1, "fail": 2}
+            result["decision"] = max(decision, data["decision"], key=severity.get)
+            result["score"] = min(score, data["score"])
+            if result["score"] < 60 or data.get("plagiarism", {}).get("risk") == "high":
+                result["decision"] = "fail"
+            elif result["score"] < 80 and result["decision"] == "pass":
+                result["decision"] = "warn"
+            result["suggestions"] = list(dict.fromkeys(data.get("suggestions", []) + result["suggestions"]))[:5]
+        else:
+            if decision == "pass":
+                result["decision"] = "warn"
+            result["suggestions"].insert(0, "语义审稿未完成，请人工复核或重新审稿")
+        result["passed"] = result["decision"] == "pass"
 
     return result
 
@@ -95,7 +114,9 @@ def _review_requirement(article: str, topic: str, tone: str, length: str) -> dic
     score = 100
 
     if text_len == 0:
-        return {"score": 0, "issues": ["生成内容为空"], "metrics": {"chars": 0}}
+        return {"score": 0, "passed": False, "status": "fail", "issues": ["生成内容为空"],
+                "checks": {"non_empty": False, "length": False},
+                "metrics": {"chars": 0, "target_min": min_len, "target_max": max_len}}
 
     if text_len < min_len:
         score -= min(35, round((min_len - text_len) / max(min_len, 1) * 45))
@@ -112,12 +133,12 @@ def _review_requirement(article: str, topic: str, tone: str, length: str) -> dic
         score -= 14
         issues.append("主题呼应较弱，建议强化核心意象或论点")
 
-    if tone and tone != "default" and tone not in article:
-        # Tone labels are often abstract; keep this as a light warning only.
-        score -= 3
-
     return {
         "score": _clamp(score),
+        "passed": min_len <= text_len <= max_len,
+        "status": "pass" if min_len <= text_len <= max_len else "fail",
+        "checks": {"non_empty": True, "length": min_len <= text_len <= max_len,
+                   "topic_method": "lexical_heuristic", "tone": "not_checked"},
         "issues": issues,
         "metrics": {
             "chars": text_len,
@@ -138,7 +159,7 @@ def _review_style(article: str, source_documents: List[Document], style_guide: s
         }
 
     generated_stats = _text_stats(article)
-    source_text = "\n".join(doc.page_content for doc in source_documents[:80])
+    source_text = "\n".join(doc.page_content for doc in source_documents if doc.metadata.get("style_eligible", True))
     if not source_text:
         score = 65 if style_guide else 55
         return {
@@ -203,18 +224,19 @@ def _review_plagiarism(plagiarism_result: dict) -> dict:
     similar_docs = plagiarism_result.get("similar_docs") or []
     max_common = int(plagiarism_result.get("max_common") or 0)
     warning = plagiarism_result.get("warning") or ""
+    originality_status = plagiarism_result.get("originality_status")
 
-    if passed is False:
+    if originality_status == "high_risk" or passed is False:
         score = 20
         risk = "high"
         issues = [warning or "检测到较长连续重复"]
-    elif similar_docs:
+    elif originality_status == "needs_review" or similar_docs:
         score = 68
         risk = "medium"
         issues = [warning or "存在整体相似度较高的原文片段"]
     elif passed is None:
         score = 60
-        risk = "medium"
+        risk = "unknown"
         issues = [warning or "重复检测未完成"]
     else:
         score = 95
@@ -225,10 +247,16 @@ def _review_plagiarism(plagiarism_result: dict) -> dict:
         "score": score,
         "risk": risk,
         "passed": passed,
+        "originality_status": originality_status or {"high": "high_risk", "medium": "needs_review",
+                                                       "unknown": "not_checked", "low": "low_risk"}[risk],
         "issues": issues,
         "max_common": max_common,
         "max_common_text": plagiarism_result.get("max_common_text", ""),
         "similar_docs": similar_docs[:5],
+        "evidence": plagiarism_result.get("evidence", []),
+        "coverage": plagiarism_result.get("coverage", {}),
+        "scope": plagiarism_result.get("scope", {}),
+        "methods": plagiarism_result.get("methods", {}),
     }
 
 
@@ -251,17 +279,18 @@ def _run_llm_review(**kwargs) -> dict:
         )
         content = _extract_response_text(response.content)
         parsed = _parse_json_object(content)
+        _validate_llm_review(parsed)
         return {"ok": True, "data": parsed}
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
 
 
 def _decision(score: int, requirement: dict, style: dict, plagiarism: dict) -> str:
-    if plagiarism["risk"] == "high" or requirement["score"] < 55:
+    if plagiarism["risk"] == "high" or requirement.get("passed") is False or requirement["score"] < 55:
         return "fail"
     if score < 60:
         return "fail"
-    if score < 80 or style["score"] < 70 or plagiarism["risk"] == "medium":
+    if score < 80 or style["score"] < 70 or plagiarism["risk"] in {"medium", "unknown"}:
         return "warn"
     return "pass"
 
@@ -364,6 +393,30 @@ def _parse_json_object(text: str) -> dict:
     if not match:
         raise ValueError("LLM review did not return a JSON object")
     return json.loads(match.group(0))
+
+
+def _validate_llm_review(data: dict):
+    if not isinstance(data, dict) or data.get("decision") not in {"pass", "warn", "fail"}:
+        raise ValueError("invalid review decision")
+    if type(data.get("score")) is not int or not 0 <= data["score"] <= 100:
+        raise ValueError("invalid review score")
+    if type(data.get("passed")) is not bool or data["passed"] != (data["decision"] == "pass"):
+        raise ValueError("invalid review passed flag")
+    for key in ("requirement", "style", "plagiarism"):
+        section = data.get(key, {})
+        if not isinstance(section, dict):
+            raise ValueError(f"invalid review {key}")
+        if "score" in section and (type(section["score"]) is not int or not 0 <= section["score"] <= 100):
+            raise ValueError(f"invalid review {key} score")
+        for field in ("issues", "matched", "missing", "notes"):
+            values = section.get(field, [])
+            if not isinstance(values, list) or not all(isinstance(value, str) for value in values):
+                raise ValueError(f"invalid review {key}.{field}")
+    if "risk" in data.get("plagiarism", {}) and data["plagiarism"]["risk"] not in {"low", "medium", "high", "unknown"}:
+        raise ValueError("invalid review plagiarism risk")
+    suggestions = data.get("suggestions", [])
+    if not isinstance(suggestions, list) or not all(isinstance(value, str) for value in suggestions):
+        raise ValueError("invalid review suggestions")
 
 
 def _clamp(value: int, low: int = 0, high: int = 100) -> int:

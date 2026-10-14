@@ -1,8 +1,14 @@
 [
   {
     "provider": "openai",
-    "name": "deepseek-chat",
+    "name": "deepseek-flash",
     "base_url": "https://api.deepseek.com/v1",
-    "label": "DeepSeek"
+    "label": "DeepSeek Flash"
+  },
+  {
+    "provider": "openai",
+    "name": "deepseek-v4-pro",
+    "base_url": "https://api.deepseek.com/v1",
+    "label": "DeepSeek Pro"
   }
 ]

@@ -1,0 +1,2 @@
+# Optional CPU embeddings. Install in addition to requirements.lock.
+fastembed==0.8.1

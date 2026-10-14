@@ -20,7 +20,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 def fetch(url: str, timeout: float = 3.0) -> tuple[int, str]:
-    with urllib.request.urlopen(url, timeout=timeout) as response:
+    headers = {}
+    if os.getenv("STYLEMUSE_ACCESS_TOKEN"):
+        headers["Authorization"] = f"Bearer {os.environ['STYLEMUSE_ACCESS_TOKEN']}"
+    with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=timeout) as response:
         body = response.read().decode("utf-8", errors="replace")
         return response.status, body
 
@@ -45,15 +48,17 @@ def wait_for_server(base_url: str, process: subprocess.Popen, timeout: float) ->
     raise RuntimeError(f"server did not become ready within {timeout}s: {last_error}")
 
 
-def run_smoke_check(port: int, timeout: float) -> int:
+def run_smoke_check(port: int, timeout: float, production: bool = False) -> int:
     env = dict(os.environ)
     env["FLASK_HOST"] = "127.0.0.1"
     env["FLASK_PORT"] = str(port)
     env["FLASK_DEBUG"] = "0"
+    env["STYLEMUSE_EXTERNAL_WORKER"] = "1"  # Health checks must not execute pending model tasks.
     env.setdefault("PYTHONUTF8", "1")
 
+    command = [sys.executable, "-m", "waitress", "--host=127.0.0.1", f"--port={port}", "--call", "app:create_app"] if production else [sys.executable, "app.py"]
     process = subprocess.Popen(
-        [sys.executable, "app.py"],
+        command,
         cwd=PROJECT_ROOT,
         env=env,
         stdout=subprocess.PIPE,
@@ -94,10 +99,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Run a local Flask smoke check.")
     parser.add_argument("--port", type=int, default=5050)
     parser.add_argument("--timeout", type=float, default=20.0)
+    parser.add_argument("--production", action="store_true", help="Verify Waitress instead of the development server")
     args = parser.parse_args()
 
     try:
-        return run_smoke_check(args.port, args.timeout)
+        return run_smoke_check(args.port, args.timeout, args.production)
     except Exception as exc:
         print(f"FAIL {exc}", file=sys.stderr)
         return 1

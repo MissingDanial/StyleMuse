@@ -1,0 +1,31 @@
+{
+  "dataset_sha256": "1fe55d88032856c32ee9ef5c5d4fa9a4ae27ef09d9a2763cec76ab55d98105b0",
+  "model": "BAAI/bge-small-zh-v1.5",
+  "semantic_version": 1,
+  "mode": "symmetric_no_instruction",
+  "top_k": 5,
+  "selection": "highest development threshold retaining at least 95% expected-source recall",
+  "decision_scope": "candidate retrieval only; all candidates require human review",
+  "paid_calls": 0,
+  "group_splits": {
+    "development": [
+      "f01",
+      "f02",
+      "f03",
+      "f04",
+      "f05",
+      "f06"
+    ],
+    "holdout": [
+      "f07",
+      "f08",
+      "f09",
+      "f10",
+      "f11",
+      "f12"
+    ]
+  },
+  "threshold": 0.68314,
+  "calibration": "constructed_development_candidates",
+  "automatic_verdict": false
+}

@@ -6,14 +6,19 @@
 
 import json
 import shutil
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Dict, Optional
 
 from .config import AUTHORS_DIR, get_author_dir, save_author_config, get_llm
-from .loader import load_all_chunks
+from .loader import load_all_chunks, load_source_documents
+from .vector_cache import has_vector_store as has_cached_vectors
 from .analyzer import analyze_author
 from .logger import get_logger
 from .safety import count_files
+from .safety import resolve_under_base
+from .cache import atomic_write_json
 
 log = get_logger(__name__)
 
@@ -30,12 +35,12 @@ def list_authors() -> List[Dict[str, str]]:
 
     authors = []
     for author_dir in sorted(AUTHORS_DIR.iterdir()):
-        if not author_dir.is_dir():
+        if not author_dir.is_dir() or author_dir.name.startswith("."):
             continue
 
         name = author_dir.name
         has_style_guide = (author_dir / "style_guide.md").exists()
-        has_vector_store = (author_dir / "cache" / "faiss" / "index.faiss").exists()
+        has_vector_store = has_cached_vectors(author_dir / "cache" / "faiss")
 
         # 统计文件数
         works_count = len(list((author_dir / "works").glob("*.txt"))) if (author_dir / "works").exists() else 0
@@ -118,11 +123,7 @@ def create_author(
         log.info("正在分析写作风格...")
         from .config import load_author_config
         cfg = load_author_config(name)
-        documents = load_all_chunks(
-            author_dir,
-            chunk_size=cfg["chunk_size"],
-            chunk_overlap=cfg["chunk_overlap"],
-        )
+        documents = [doc for doc in load_source_documents(author_dir) if doc.metadata.get("style_eligible", True)]
         if documents:
             # 尝试使用 LLM 分析
             llm = None
@@ -195,14 +196,10 @@ def _load_existing_author_config(author_dir: Path) -> dict:
 def _build_vector_index(name: str, author_dir: Path):
     """为作家构建向量索引"""
     from .config import load_author_config, get_embeddings
-    from .rag_chain import create_vector_store
+    from .vector_cache import create_vector_store, load_vector_store, vector_manifest
 
     cfg = load_author_config(name)
     cache_dir = author_dir / "cache" / "faiss"
-
-    if (cache_dir / "index.faiss").exists():
-        log.info("  向量索引已存在，跳过构建")
-        return
 
     try:
         embeddings = get_embeddings(cfg)
@@ -215,19 +212,22 @@ def _build_vector_index(name: str, author_dir: Path):
         author_dir,
         chunk_size=cfg["chunk_size"],
         chunk_overlap=cfg["chunk_overlap"],
-        force_recreate=True,
     )
 
     if documents:
-        create_vector_store(documents, embeddings, cache_dir)
+        manifest = vector_manifest(documents, cfg)
+        if load_vector_store(embeddings, cache_dir, manifest=manifest) is not None:
+            log.info("  向量索引版本未变，跳过构建")
+            return
+        create_vector_store(documents, embeddings, cache_dir, manifest=manifest)
         log.info(f"  向量索引构建完成: {len(documents)} 个文本块")
     else:
         log.warning("  无文档可索引")
 
 
-def delete_author(name: str, confirm: bool = True, max_files: int = 3) -> bool:
+def delete_author(name: str, confirm: bool = True, max_files: int = None) -> bool:
     """
-    删除作家工作空间。
+    将作家工作空间移入可恢复归档。
 
     Args:
         name: 作家名称
@@ -243,7 +243,7 @@ def delete_author(name: str, confirm: bool = True, max_files: int = 3) -> bool:
         return False
 
     file_count = count_files(author_dir)
-    if file_count > max_files:
+    if max_files is not None and file_count > max_files:
         raise ValueError(
             f"作家 '{name}' 包含 {file_count} 个文件，超过单次最多删除 {max_files} 个文件的限制"
         )
@@ -254,9 +254,31 @@ def delete_author(name: str, confirm: bool = True, max_files: int = 3) -> bool:
             log.info("已取消")
             return False
 
-    shutil.rmtree(author_dir)
-    log.info(f"已删除作家 '{name}'")
+    archive_id = uuid.uuid4().hex
+    archive_dir = resolve_under_base(author_dir.parent, author_dir.parent / ".trash" / archive_id)
+    archive_dir.mkdir(parents=True)
+    atomic_write_json(archive_dir / "metadata.json", {"name": name, "archive_id": archive_id,
+                      "created_at": datetime.now(timezone.utc).isoformat(), "files": file_count})
+    destination = resolve_under_base(author_dir.parent, archive_dir / "author")
+    author_dir.rename(destination)
+    log.info(f"已归档作家 '{name}'，恢复编号: {archive_id}")
     return True
+
+
+def restore_author(archive_id: str) -> Path:
+    """Restore an archived workspace without replacing an existing author."""
+    import re
+    from . import config as config_module
+    if not re.fullmatch(r"[0-9a-f]{32}", archive_id):
+        raise ValueError("无效恢复编号")
+    archive_dir = resolve_under_base(config_module.AUTHORS_DIR, config_module.AUTHORS_DIR / ".trash" / archive_id)
+    metadata = json.loads((archive_dir / "metadata.json").read_text(encoding="utf-8"))
+    destination = get_author_dir(metadata["name"])
+    if destination.exists():
+        raise ValueError("同名作家已存在，请先重命名或归档后再恢复")
+    source = resolve_under_base(archive_dir, archive_dir / "author")
+    source.rename(destination)
+    return destination
 
 
 def get_author_info(name: str) -> Optional[Dict]:
@@ -276,6 +298,6 @@ def get_author_info(name: str) -> Optional[Dict]:
         "epub_files": [f.name for f in epub_dir.glob("*.epub")] if epub_dir.exists() else [],
         "has_style_guide": (author_dir / "style_guide.md").exists(),
         "has_few_shot": (author_dir / "few_shot.md").exists(),
-        "has_vector_store": (cache_dir / "faiss" / "index.faiss").exists(),
+        "has_vector_store": has_cached_vectors(cache_dir / "faiss"),
         "config_file": str(author_dir / "config.json"),
     }
